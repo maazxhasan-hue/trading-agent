@@ -169,7 +169,7 @@ class AgentLearningStore:
 
     def qualification(self, agent, minimum_samples=None, minimum_accuracy=None, maximum_brier=None):
         """Return a conservative trading-eligibility decision for one agent."""
-        minimum_samples = int(os.getenv("LEARNING_MIN_SAMPLES", "20")) if minimum_samples is None else int(minimum_samples)
+        minimum_samples = int(os.getenv("LEARNING_MIN_SAMPLES", "30")) if minimum_samples is None else int(minimum_samples)
         minimum_accuracy = float(os.getenv("LEARNING_MIN_ACCURACY", "0.55")) if minimum_accuracy is None else float(minimum_accuracy)
         maximum_brier = float(os.getenv("LEARNING_MAX_BRIER", "0.25")) if maximum_brier is None else float(maximum_brier)
         stats = self.stats(agent)
@@ -196,7 +196,8 @@ class AgentLearningStore:
     def observation_count(self):
         return sum(len(rows) for rows in self.data.get("observations", {}).values())
 
-    def weight(self, agent, minimum_samples=20):
+    def weight(self, agent, minimum_samples=None):
+        minimum_samples = int(os.getenv("LEARNING_MIN_SAMPLES", "30")) if minimum_samples is None else int(minimum_samples)
         stats = self.stats(agent)
         n = stats["forecasts"]
         if n < minimum_samples:
