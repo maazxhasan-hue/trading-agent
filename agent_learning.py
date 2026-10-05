@@ -77,7 +77,7 @@ class AgentLearningStore:
         self.data["pending"] = self.data["pending"][-self.max_pending:]
         self._save()
 
-    def _record_agent(self, agent, direction, outcome):
+    def _record_agent(self, agent, direction, outcome, confidence):
         d = self.data["agents"].setdefault(agent, {
             "forecasts": 0,
             "correct": 0,
@@ -89,9 +89,9 @@ class AgentLearningStore:
         correct = direction == outcome
         d["correct"] += int(correct)
         d["incorrect"] += int(not correct)
-        # Directional confidence is intentionally capped. This score is for
-        # weighting debate influence, not for treating confidence as truth.
-        p = 0.5 + 0.5 * min(0.95, max(0.0, abs(direction)))
+        # Convert confidence into a probability for the direction forecast.
+        confidence = min(0.95, max(0.50, float(confidence)))
+        p = confidence if direction == 1 else 1.0 - confidence
         d["brier_sum"] += (p - (1.0 if correct else 0.0)) ** 2
         d["last_updated"] = time.time()
 
@@ -117,7 +117,7 @@ class AgentLearningStore:
                     continue
                 outcome = 1 if current > previous else -1
                 for agent, direction in item.get("directions", {}).items():
-                    self._record_agent(agent, direction, outcome)
+                    self._record_agent(agent, direction, outcome, item.get("confidence", 0.5))
                 item["resolved_at"] = now
                 item["outcome"] = outcome
                 item["resolved_price"] = current
