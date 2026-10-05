@@ -51,6 +51,8 @@ def walk_forward_report(
     recent_size: int = 10,
     min_recent_accuracy: float = 0.50,
     max_recent_accuracy_drop: float = 0.15,
+    min_accuracy: float = 0.55,
+    max_brier: float = 0.25,
 ) -> dict:
     """Evaluate one agent using chronological holdout windows.
 
@@ -117,12 +119,12 @@ def walk_forward_report(
     status = "validated" if (
         n >= min_train_samples + required_windows * max(1, test_size)
         and len(windows) >= required_windows
-        and accuracy >= 0.55
-        and brier <= 0.25
+        and accuracy >= min_accuracy
+        and brier <= max_brier
         and wf_accuracy is not None
         and wf_brier is not None
-        and wf_accuracy >= 0.55
-        and wf_brier <= 0.25
+        and wf_accuracy >= min_accuracy
+        and wf_brier <= max_brier
         and recent_stable
     ) else "insufficient_or_unstable"
 
