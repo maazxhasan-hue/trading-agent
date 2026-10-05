@@ -23,11 +23,22 @@ class AgentState:
     parent_id: str = ""
 
 
+def _default_state_path(filename):
+    """Use Deplexo's writable persistent mount when available."""
+    if os.path.isdir("/data"):
+        return os.path.join("/data", filename)
+    return filename
+
+
 class AgentLifecycleManager:
     def __init__(self, path=None, calibration_floor=0.55):
-        path = path or os.getenv("AGENT_LIFECYCLE_FILE", "agent_lifecycle.json")
+        path = path or os.getenv(
+            "AGENT_LIFECYCLE_FILE",
+            _default_state_path("agent_lifecycle.json"),
+        )
         self.path = path
         self.calibration_floor = calibration_floor
+        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         self.agents = self._load()
 
     def _load(self):
@@ -66,8 +77,6 @@ class AgentLifecycleManager:
                 a.last_failure = failure_reason
             total = a.wins + a.losses
             a.fitness = a.wins / total if total else 0.50
-            # A single verified losing thesis makes the specific agent ineligible
-            # for the next decision; repeated failures cause full retirement.
             if not won:
                 a.status = "QUARANTINED"
             self._save()
