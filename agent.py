@@ -119,11 +119,17 @@ class FairValueAgent:
 
 
 class StrategyAgent:
-    def __init__(self, agent_id, name, version=1, mutation=""):
+    def __init__(self, agent_id, name, version=1, mutation="", runtime=None):
         self.agent_id = agent_id
         self.name = name
         self.version = version
         self.mutation = mutation
+        self.runtime = runtime
+
+    def runtime_status(self):
+        if self.runtime is None:
+            return {"agent_id": self.agent_id, "runtime_attached": False}
+        return self.runtime["status"]
 
     def vote(self, market, fair, research=None, for_learning=False):
         edge = fair - market.yes_price
@@ -251,8 +257,20 @@ class RiskAgent:
 
 
 class TradingCompany:
-    def __init__(self):
+    def __init__(self, runtime_manager=None):
         self.bankroll = START_BANKROLL
+        self.runtime_manager = runtime_manager
+        self.agent_runtimes = {}
+        if runtime_manager is not None:
+            strategy_ids = [
+                "momentum", "mean_reversion", "event_driven",
+                "crypto_specialist", "x_social_research",
+                "cross_market_arbitrage",
+            ]
+            self.agent_runtimes = {
+                name: runtime_manager.provision(name)
+                for name in strategy_ids
+            }
         self.peak_bankroll = START_BANKROLL
         self.feed = PolymarketPublicFeed()
         self.fair = FairValueAgent()
@@ -301,7 +319,19 @@ class TradingCompany:
         for name in strategy_names:
             state = self.lifecycle.ensure(name + "-v1", name)
             self.strategies.append(
-                StrategyAgent(state.agent_id, name, state.version)
+                StrategyAgent(
+                    state.agent_id,
+                    name,
+                    state.version,
+                    runtime=(
+                        {
+                            "runtime": self.agent_runtimes[name],
+                            "status": runtime_manager.capability_status(self.agent_runtimes[name]),
+                        }
+                        if runtime_manager is not None and name in self.agent_runtimes
+                        else None
+                    ),
+                )
             )
 
         if not os.path.exists(self.log):
