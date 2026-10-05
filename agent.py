@@ -285,7 +285,12 @@ class TradingCompany:
         self.fair = FairValueAgent()
         self.risk = RiskAgent()
         self.portfolio_risk = PortfolioRisk()
-        self.execution_risk = ExecutionRiskGate(max_position=MAX_POSITION)
+        self.execution_risk = ExecutionRiskGate(
+            max_position=MAX_POSITION,
+            max_slippage=float(os.getenv("MAX_EXECUTION_SLIPPAGE", "0.02")),
+            min_book_depth_multiple=float(os.getenv("MIN_BOOK_DEPTH_MULTIPLE", "2.0")),
+            kill_switch=os.getenv("TRADING_KILL_SWITCH", "false").lower() == "true",
+        )
         self.calibration = CalibrationTracker()
         self.lifecycle = AgentLifecycleManager()
         self.execution = PolymarketExecution()
