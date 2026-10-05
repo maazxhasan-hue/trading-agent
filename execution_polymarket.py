@@ -1,10 +1,14 @@
 """Polymarket execution and reconciliation adapter.
 
-Live execution is opt-in and locked behind explicit environment variables.
-Secrets are read only from the runtime environment.
+Live execution is opt-in, cloud-only, and locked behind explicit runtime
+approval plus protected credentials. Secrets are read only from the runtime
+environment. A laptop/local checkout can never place live orders.
 """
 import os
 from dataclasses import dataclass
+
+from runtime_guard import require_live_runtime
+
 
 @dataclass
 class LiveOrderRequest:
@@ -13,18 +17,25 @@ class LiveOrderRequest:
     size: float
     side: str
 
+
 class LiveExecutionLocked(Exception):
     pass
+
 
 class PolymarketExecution:
     def __init__(self):
         self.enabled = os.getenv("LIVE_TRADING", "false").lower() == "true"
         self.armed = os.getenv("LIVE_TRADING_ARM") == "I_UNDERSTAND_LIVE_TRADING"
         self.host = os.getenv("CLOB_API_URL", "https://clob.polymarket.com")
-        if self.enabled and not self.armed:
-            raise LiveExecutionLocked("LIVE_TRADING=true requires explicit arm.")
         self.client = None
+
         if self.enabled:
+            if not self.armed:
+                raise LiveExecutionLocked("LIVE_TRADING=true requires explicit arm.")
+            try:
+                require_live_runtime()
+            except Exception as exc:
+                raise LiveExecutionLocked(str(exc)) from exc
             self._connect()
 
     def _connect(self):
@@ -48,8 +59,13 @@ class PolymarketExecution:
         )
 
     def status(self):
-        return {"live_enabled": self.enabled, "armed": self.armed,
-                "connected": self.client is not None}
+        return {
+            "live_enabled": self.enabled,
+            "armed": self.armed,
+            "cloud_runtime": os.getenv("CLOUD_RUNTIME", "false").lower() == "true",
+            "live_runtime_approved": os.getenv("LIVE_RUNTIME_APPROVED", "false").lower() == "true",
+            "connected": self.client is not None,
+        }
 
     def cancel_all(self):
         if not self.enabled:
@@ -59,6 +75,11 @@ class PolymarketExecution:
     def place_limit(self, request):
         if not self.enabled or not self.armed:
             raise LiveExecutionLocked("Live execution is locked.")
+        try:
+            require_live_runtime()
+        except Exception as exc:
+            raise LiveExecutionLocked(str(exc)) from exc
+
         from py_clob_client_v2 import OrderArgs, OrderType, PartialCreateOrderOptions, Side
         if not (0 < request.price < 1) or request.size <= 0:
             raise ValueError("Invalid live order price/size.")
