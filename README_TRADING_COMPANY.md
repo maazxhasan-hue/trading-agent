@@ -2,7 +2,20 @@
 
 ## Pipeline
 
-SCAN -> RESEARCH -> FAIR VALUE -> DEBATE -> RED TEAM -> RISK -> SIZING -> EXECUTION -> POST-TRADE -> AGENT HEALTH
+SCAN -> RESEARCH -> FAIR VALUE -> DEBATE -> RED TEAM -> PORTFOLIO RISK -> EXECUTION RISK -> SIZING -> EXECUTION -> RECONCILIATION -> POST-TRADE -> AGENT HEALTH
+
+## Current safety gates
+
+- Paper mode is the default.
+- Live orders require explicit environment arming and protected credentials.
+- Research must pass freshness/provenance gates before a trade can be proposed.
+- Position size is capped at 6% of bankroll and fractional Kelly is used.
+- Portfolio exposure and correlated exposure are capped.
+- Daily loss and portfolio drawdown circuit breakers are enforced.
+- Execution risk can reject thin order books or unsafe conditions.
+- Live reconciliation uses venue-reported order status, cumulative matched quantity and average fill price; it never invents fills.
+- Canceled/rejected/expired live orders are removed from active exposure.
+- Losses are diagnosed before any strategy replacement is activated; no revenge trading or averaging down.
 
 ## Research sources
 
@@ -18,14 +31,27 @@ A connector must be explicitly implemented and authorized; the agent should neve
 
 ## Position sizing
 
-Use conservative fractional Kelly and cap each position at 6% of bankroll. Additional volatility, correlation and liquidity limits can only reduce the size.
+Use conservative fractional Kelly and cap each position at 6% of bankroll. Additional volatility, correlation, liquidity, order-book depth and execution-risk limits can only reduce the size.
 
 ## Confidence
 
 The execution gate requires >= 80% model confidence, but this is not a guarantee of winning. Calibration must be measured over time.
 
-## Safety defaults
+## Cloud runtime
 
-Paper mode is the default. Live execution is disabled until a real execution adapter is explicitly configured and authorized.
+The supervisor supports persistent agent workspaces, isolated browser profiles and isolated terminal workspaces. The full Docker image includes Playwright/Chromium; the lightweight Deplexo image intentionally omits Chromium and should remain paper-only unless the deployment is upgraded.
+
+## Deployment
+
+deplexo.yaml uses the lightweight Dockerfile.deplexo image on port 8080. Configure the environment variables in the Deplexo dashboard and attach persistent storage at /data when available.
+
+## Validation before live trading
+
+1. CI tests and compile checks pass.
+2. Paper trading runs for a meaningful sample.
+3. Calibration, drawdown, slippage and execution behavior are reviewed.
+4. Live execution remains disabled until an explicit manual go/no-go decision.
+
+No system in this repository guarantees profit. Paper performance is not proof of future results.
 
 Credentials belong in protected secrets, never in Git.
