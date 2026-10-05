@@ -43,16 +43,49 @@ class AgentSupervisor:
                 "agents": self.health(),
             }, f, indent=2)
 
+    def validation(self):
+        """Expose real validation progress without authorizing trades."""
+        try:
+            from agent_learning import AgentLearningStore
+            store = AgentLearningStore()
+            ids = [
+                "momentum-v1", "mean_reversion-v1", "event_driven-v1",
+                "crypto_specialist-v1", "x_social_research-v1",
+                "cross_market_arbitrage-v1",
+            ]
+            qualified, details = store.qualified_agents(ids)
+            return {
+                "status": "qualified" if len(qualified) >= 3 else "collecting",
+                "qualified_count": len(qualified),
+                "required": 3,
+                "qualified_agents": qualified,
+                "resolved_forecasts": len(store.data.get("history", [])),
+                "pending_forecasts": len(store.data.get("pending", [])),
+                "observations": store.observation_count(),
+                "agents": details,
+                "live_trading_authorized": False,
+            }
+        except Exception as exc:
+            return {
+                "status": "unavailable",
+                "error": repr(exc),
+                "live_trading_authorized": False,
+            }
+
     def run_health_server(self):
         port = int(os.getenv("PORT", "8080"))
 
         class HealthHandler(BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path not in ("/", "/health", "/healthz"):
+                if self.path in ("/", "/health", "/healthz"):
+                    payload = {"status": "ok", "service": "trading-company"}
+                elif self.path == "/validation":
+                    payload = self.validation()
+                else:
                     self.send_response(404)
                     self.end_headers()
                     return
-                body = b'{"status":"ok","service":"trading-company"}'
+                body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
