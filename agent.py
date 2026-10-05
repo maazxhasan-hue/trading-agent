@@ -21,6 +21,7 @@ from agent_lifecycle import AgentLifecycleManager
 from market_data import price_history
 from portfolio_risk import PortfolioRisk, Position
 from calibration import CalibrationTracker
+from execution_polymarket import LiveExecutionLocked, LiveOrderRequest, PolymarketExecution
 
 
 SCAN_SECONDS = 300
@@ -42,6 +43,8 @@ class Market:
     yes_price: float
     volume: float
     liquidity: float
+    yes_token_id: str = ""
+    no_token_id: str = ""
 
 
 @dataclass
@@ -93,12 +96,19 @@ class PolymarketPublicFeed:
                 p = float(prices[0])
                 if not 0.01 < p < 0.99:
                     continue
+                token_ids = row.get("clobTokenIds") or row.get("clobTokenIDs") or []
+                if isinstance(token_ids, str):
+                    token_ids = json.loads(token_ids)
+                yes_token = str(token_ids[0]) if len(token_ids) > 0 else ""
+                no_token = str(token_ids[1]) if len(token_ids) > 1 else ""
                 result.append(Market(
                     str(row.get("id") or row.get("conditionId") or ""),
                     str(row.get("question") or "Unknown market"),
                     p,
                     float(row.get("volume") or 0),
                     float(row.get("liquidity") or 0),
+                    yes_token,
+                    no_token,
                 ))
             except (TypeError, ValueError, KeyError, json.JSONDecodeError):
                 continue
@@ -249,6 +259,7 @@ class TradingCompany:
         self.portfolio_risk = PortfolioRisk()
         self.calibration = CalibrationTracker()
         self.lifecycle = AgentLifecycleManager()
+        self.execution = PolymarketExecution()
         self.positions = []
         self.open_trades = []
         self.daily_pnl = 0.0
@@ -347,6 +358,34 @@ class TradingCompany:
 
     def paper_order(self, proposal):
         stake = self.bankroll * proposal.position_fraction
+        token_id = (
+            proposal.market.yes_token_id
+            if proposal.side == "BUY_YES"
+            else proposal.market.no_token_id
+        )
+        price = (
+            proposal.market.yes_price
+            if proposal.side == "BUY_YES"
+            else 1 - proposal.market.yes_price
+        )
+
+        if self.execution.enabled:
+            if not token_id:
+                raise LiveExecutionLocked("Selected market has no CLOB token ID.")
+            size = stake / max(price, 0.001)
+            response = self.execution.place_limit(
+                LiveOrderRequest(
+                    token_id=token_id,
+                    price=price,
+                    size=size,
+                    side="BUY",
+                )
+            )
+            print("[LIVE ORDER SUBMITTED]", response)
+            decision_label = "LIVE_ORDER_SUBMITTED"
+        else:
+            decision_label = "PAPER_ORDER"
+
         trade = OpenTrade(
             proposal=proposal,
             entry_yes_price=proposal.market.yes_price,
@@ -362,7 +401,7 @@ class TradingCompany:
                 proposal.confidence,
             )
         )
-        print("[PAPER OPEN]", proposal.side,
+        print("[" + decision_label + "]", proposal.side,
               "edge=%.2f%%" % (proposal.edge * 100),
               "confidence=%.2f%%" % (proposal.confidence * 100),
               "stake=%.2f" % stake,
