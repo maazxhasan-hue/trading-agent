@@ -1,11 +1,6 @@
-"""Research provenance, freshness, and completeness gates.
-
-All timestamps are UTC epoch seconds. A source is usable only when it is both
-available and fresh enough for the configured trading policy.
-"""
+"""Research provenance, freshness, and completeness gates for paper research."""
 from dataclasses import dataclass, field
 import time
-
 
 @dataclass
 class SourceRecord:
@@ -15,7 +10,6 @@ class SourceRecord:
     age_seconds: float
     evidence_count: int = 0
     warning: str = ""
-
 
 @dataclass
 class ResearchQuality:
@@ -29,14 +23,9 @@ class ResearchQuality:
         age = max(0.0, now - fetched_at)
         fresh = age <= max_age
         usable = bool(status) and fresh
-        warning = ""
-        if not status:
-            warning = "unavailable"
-        elif not fresh:
-            warning = "stale"
+        warning = "" if usable else ("stale" if status else "unavailable")
         self.records[name] = SourceRecord(
-            name, "ok" if usable else ("stale" if status else "unavailable"),
-            fetched_at, age, int(evidence_count), warning,
+            name, "ok" if usable else warning, fetched_at, age, int(evidence_count), warning
         )
         if not usable:
             self.failures.append(name)
