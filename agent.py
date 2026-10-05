@@ -396,7 +396,9 @@ class TradingCompany:
                 fraction,
                 self.bankroll,
                 price,
-                None,
+                research.best_ask if side == "BUY_YES" else (
+                    1.0 - research.best_bid if research.best_bid > 0 else None
+                ),
                 research.book_depth,
                 self.daily_pnl,
             )
