@@ -655,11 +655,34 @@ class TradingCompany:
                       "matched=", fill.matched_size,
                       "remaining=", fill.remaining_size,
                       "avg=", fill.average_price)
-                if fill.status in {"CANCELED", "CANCELLED", "REJECTED", "EXPIRED"}:
+                if fill.matched_size <= 0 and fill.status in {"CANCELED", "CANCELLED", "REJECTED", "EXPIRED"}:
                     self.open_trades.remove(trade)
                     self.positions = [p for p in self.positions
                                       if p.market_id != trade.proposal.market.market_id]
                     self.position_questions.pop(trade.proposal.market.market_id, None)
+                elif fill.matched_size > 0:
+                    # Exposure is based on the venue's cumulative matched size,
+                    # never on the originally requested order size. This keeps
+                    # partial fills from overstating portfolio risk.
+                    effective_price = trade.average_fill_price or (
+                        trade.proposal.market.yes_price
+                        if trade.proposal.side == "BUY_YES"
+                        else 1 - trade.proposal.market.yes_price
+                    )
+                    matched_stake = fill.matched_size * effective_price
+                    trade.stake = matched_stake
+                    trade.requested_size = max(trade.requested_size, fill.requested_size)
+                    matched_fraction = min(
+                        MAX_POSITION,
+                        matched_stake / max(self.bankroll, 1e-9),
+                    )
+                    for position in self.positions:
+                        if position.market_id == trade.proposal.market.market_id:
+                            position.fraction = matched_fraction
+                    if fill.status in {"CANCELED", "CANCELLED", "REJECTED", "EXPIRED"}:
+                        # A partially filled order remains an open position;
+                        # only the unfilled remainder is terminal.
+                        trade.live_status = "PARTIALLY_FILLED_TERMINAL"
             except Exception as exc:
                 print("[LIVE RECONCILE ERROR]", trade.order_id, repr(exc))
 
