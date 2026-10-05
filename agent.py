@@ -269,7 +269,7 @@ class TradingCompany:
         self.positions = []
         self.open_trades = []
         self.daily_pnl = 0.0
-        self.log = "paper_trades.csv"
+        self.log = os.getenv("TRADING_LOG_FILE", "paper_trades.csv")
 
         strategy_names = [
             "momentum", "mean_reversion", "event_driven",
