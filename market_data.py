@@ -228,13 +228,16 @@ def markets(max_markets=1000):
     out = []
     cursor = None
     seen_cursors = set()
+    pages = 0
+    raw_rows = 0
 
     while len(out) < target:
         limit = min(page_size, target - len(out))
-        params = {"closed": "false", "limit": limit}
+        params = {"active": "true", "closed": "false", "limit": limit}
         if cursor:
             params["after_cursor"] = cursor
 
+        pages += 1
         payload, status = _request_page(params)
         if payload is None:
             cached = _load_cache()
@@ -258,6 +261,7 @@ def markets(max_markets=1000):
         if not rows:
             break
 
+        raw_rows += len(rows)
         out.extend(rows)
         if len(out) >= target or len(rows) < limit or not next_cursor:
             break
@@ -281,7 +285,7 @@ def markets(max_markets=1000):
         LAST_FEED_STALE = True
         LAST_FEED_STATUS = "empty"
 
-    print("[feed] universe fetched:", len(parsed), "markets", "status=", LAST_FEED_STATUS)
+    print("[feed] universe fetched:", len(parsed), "markets", "raw_rows=", raw_rows, "pages=", pages, "target=", target, "status=", LAST_FEED_STATUS)
     return parsed
 
 
