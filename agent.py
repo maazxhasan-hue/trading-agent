@@ -24,6 +24,7 @@ from calibration import CalibrationTracker
 from execution_polymarket import LiveExecutionLocked, LiveOrderRequest, PolymarketExecution
 from research_pipeline import research_market
 from post_trade import PostTradeAnalyzer
+from live_reconciliation import normalize_order, has_new_fill
 
 
 SCAN_SECONDS = 300
@@ -72,6 +73,10 @@ class OpenTrade:
     stake: float
     order_id: str = ""
     live: bool = False
+    requested_size: float = 0.0
+    matched_size: float = 0.0
+    average_fill_price: float = 0.0
+    live_status: str = ""
 
 
 class PolymarketPublicFeed:
@@ -426,6 +431,7 @@ class TradingCompany:
         else:
             decision_label = "PAPER_ORDER"
 
+        requested_size = stake / max(price, 0.001) if self.execution.enabled else 0.0
         trade = OpenTrade(
             proposal=proposal,
             entry_yes_price=proposal.market.yes_price,
@@ -433,6 +439,8 @@ class TradingCompany:
             stake=stake,
             order_id=order_id,
             live=self.execution.enabled,
+            requested_size=requested_size,
+            live_status="SUBMITTED" if self.execution.enabled else "PAPER_OPEN",
         )
         self.open_trades.append(trade)
         self.positions.append(
@@ -514,6 +522,7 @@ class TradingCompany:
               "validation=%.2f" % score)
 
     def reconcile_live_orders(self):
+        """Reconcile venue-reported state; never infer fills locally."""
         if not self.execution.enabled:
             return
         for trade in list(self.open_trades):
@@ -521,10 +530,24 @@ class TradingCompany:
                 continue
             try:
                 state = self.execution.get_order(trade.order_id) or {}
-                status = str(state.get("status", "")).upper()
-                matched = state.get("size_matched", state.get("sizeMatched", ""))
-                print("[LIVE RECONCILE]", trade.order_id, status, matched)
-                if status in {"CANCELED", "CANCELLED", "REJECTED"}:
+                fill = normalize_order(trade.order_id, state)
+                previous = type("Previous", (), {"matched_size": trade.matched_size})()
+                if has_new_fill(previous, fill):
+                    trade.matched_size = fill.matched_size
+                    if fill.average_price is not None:
+                        trade.average_fill_price = fill.average_price
+                    price = trade.average_fill_price or (
+                        trade.proposal.market.yes_price
+                        if trade.proposal.side == "BUY_YES"
+                        else 1 - trade.proposal.market.yes_price
+                    )
+                    trade.stake = trade.matched_size * price
+                trade.live_status = fill.status
+                print("[LIVE RECONCILE]", trade.order_id, fill.status,
+                      "matched=", fill.matched_size,
+                      "remaining=", fill.remaining_size,
+                      "avg=", fill.average_price)
+                if fill.status in {"CANCELED", "CANCELLED", "REJECTED", "EXPIRED"}:
                     self.open_trades.remove(trade)
                     self.positions = [p for p in self.positions
                                       if p.market_id != trade.proposal.market.market_id]
