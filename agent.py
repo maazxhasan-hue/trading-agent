@@ -23,6 +23,7 @@ from portfolio_risk import PortfolioRisk, Position
 from calibration import CalibrationTracker
 from execution_polymarket import LiveExecutionLocked, LiveOrderRequest, PolymarketExecution
 from research_pipeline import research_market
+from post_trade import PostTradeAnalyzer
 
 
 SCAN_SECONDS = 300
@@ -32,7 +33,8 @@ CONFIDENCE_MIN = 0.80
 MAX_POSITION = 0.06
 START_BANKROLL = 1000.0
 SETTLE_AFTER_SECONDS = 300
-RESEARCH_MARKETS_PER_CYCLE = int(os.getenv("RESEARCH_MARKETS_PER_CYCLE", "6"))
+RESEARCH_MARKETS_PER_CYCLE = int(os.getenv("RESEARCH_MARKETS_PER_CYCLE", "25"))
+MAX_RESEARCH_MARKETS = max(1, min(100, RESEARCH_MARKETS_PER_CYCLE))
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "TradingCompanyAgent/2.0"})
@@ -285,7 +287,9 @@ class TradingCompany:
         self.chief = ChiefDecisionAgent()
         self.positions = []
         self.open_trades = []
+        self.position_questions = {}
         self.daily_pnl = 0.0
+        self.post_trade = PostTradeAnalyzer(os.getenv("POST_TRADE_FILE", "agent_health.json"))
         self.log = os.getenv("TRADING_LOG_FILE", "paper_trades.csv")
 
         strategy_names = [
@@ -435,8 +439,10 @@ class TradingCompany:
                 proposal.position_fraction,
                 proposal.side,
                 proposal.confidence,
+                proposal.market.question,
             )
         )
+        self.position_questions[proposal.market.market_id] = proposal.market.question
         print("[" + decision_label + "]", proposal.side,
               "edge=%.2f%%" % (proposal.edge * 100),
               "confidence=%.2f%%" % (proposal.confidence * 100),
@@ -520,6 +526,7 @@ class TradingCompany:
                     self.open_trades.remove(trade)
                     self.positions = [p for p in self.positions
                                       if p.market_id != trade.proposal.market.market_id]
+                    self.position_questions.pop(trade.proposal.market.market_id, None)
             except Exception as exc:
                 print("[LIVE RECONCILE ERROR]", trade.order_id, repr(exc))
 
@@ -570,6 +577,19 @@ class TradingCompany:
                 self.calibration.record(
                     agent_id, trade.proposal.confidence, won
                 )
+                self.post_trade.record(
+                    agent_id,
+                    trade.proposal.reason,
+                    trade.entry_yes_price,
+                    pnl,
+                    reason,
+                )
+
+            self.positions = [
+                p for p in self.positions
+                if p.market_id != trade.proposal.market.market_id
+            ]
+            self.position_questions.pop(trade.proposal.market.market_id, None)
 
             self.bankroll += pnl
             print("[PAPER SETTLE]", "WIN" if won else "LOSS",
@@ -599,7 +619,7 @@ class TradingCompany:
             if abs(edge) >= EDGE_MIN and market.liquidity > 0:
                 prelim.append((abs(edge) * confidence, market))
         prelim.sort(key=lambda x: x[0], reverse=True)
-        research_targets = [m for _, m in prelim[:RESEARCH_MARKETS_PER_CYCLE]]
+        research_targets = [m for _, m in prelim[:MAX_RESEARCH_MARKETS]]
         print("[research] deep candidates:", len(research_targets))
 
         research_by_id = {}
@@ -624,10 +644,15 @@ class TradingCompany:
         for market in research_targets:
             proposal = self.evaluate(market, research_by_id.get(market.market_id))
             if proposal and self.risk.approve(proposal, self.bankroll):
+                correlated_ids = self.portfolio_risk.correlated(
+                    proposal.market.question, self.positions
+                )
                 ok, reason = self.portfolio_risk.approve(
                     proposal.position_fraction,
                     self.positions,
                     self.daily_pnl,
+                    correlated_ids=correlated_ids,
+                    bankroll=self.bankroll,
                 )
                 if ok:
                     candidates.append(proposal)
@@ -641,6 +666,8 @@ class TradingCompany:
         print("[decision] passing all gates:", len(candidates))
 
         # One new paper position per cycle; portfolio limits remain authoritative.
+        # Research is deliberately performed before this point; incomplete or stale
+        # required sources are rejected by evaluate().
         if candidates:
             self.paper_order(candidates[0])
         else:
