@@ -13,4 +13,5 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt
-      - run: python -m py_compile agent.py
+      - run: python -m unittest discover -s tests -v
+      - run: python -m py_compile agent.py agent_lifecycle.py calibration.py portfolio_risk.py signals.py post_trade.py
