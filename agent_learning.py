@@ -11,6 +11,8 @@ import os
 import time
 from pathlib import Path
 
+from strategy_validation import walk_forward_report
+
 
 class AgentLearningStore:
     def __init__(self, path=None, horizon_seconds=None, max_pending=5000, max_history=10000, max_no_move_retries=6):
@@ -200,6 +202,24 @@ class AgentLearningStore:
             "brier": (d.get("brier_sum", 0.0) / n) if n else None,
         }
 
+    def validation_report(self, agent, minimum_samples=None, minimum_accuracy=None, maximum_brier=None):
+        """Return aggregate plus chronological walk-forward validation evidence."""
+        minimum_samples = int(os.getenv("LEARNING_MIN_SAMPLES", "30")) if minimum_samples is None else int(minimum_samples)
+        minimum_accuracy = float(os.getenv("LEARNING_MIN_ACCURACY", "0.55")) if minimum_accuracy is None else float(minimum_accuracy)
+        maximum_brier = float(os.getenv("LEARNING_MAX_BRIER", "0.25")) if maximum_brier is None else float(maximum_brier)
+        return walk_forward_report(
+            self.data.get("history", []),
+            agent,
+            test_size=int(os.getenv("LEARNING_WALK_FORWARD_TEST_SIZE", "10")),
+            min_train_samples=int(os.getenv("LEARNING_WALK_FORWARD_MIN_TRAIN", "10")),
+            min_windows=int(os.getenv("LEARNING_WALK_FORWARD_MIN_WINDOWS", "2")),
+            recent_size=int(os.getenv("LEARNING_RECENT_SAMPLES", "10")),
+            min_recent_accuracy=float(os.getenv("LEARNING_MIN_RECENT_ACCURACY", "0.50")),
+            max_recent_accuracy_drop=float(os.getenv("LEARNING_MAX_RECENT_ACCURACY_DROP", "0.15")),
+            min_accuracy=minimum_accuracy,
+            max_brier=maximum_brier,
+        )
+
     def qualification(self, agent, minimum_samples=None, minimum_accuracy=None, maximum_brier=None):
         """Return a conservative trading-eligibility decision for one agent."""
         minimum_samples = int(os.getenv("LEARNING_MIN_SAMPLES", "30")) if minimum_samples is None else int(minimum_samples)
@@ -212,7 +232,15 @@ class AgentLearningStore:
             return False, "accuracy_below_threshold", stats
         if stats["brier"] is None or stats["brier"] > maximum_brier:
             return False, "brier_above_threshold", stats
-        return True, "validated", stats
+        report = self.validation_report(agent, minimum_samples, minimum_accuracy, maximum_brier)
+        stats = {**stats, "validation": report}
+        if report["status"] != "validated":
+            if report["walk_forward_windows"] < int(os.getenv("LEARNING_WALK_FORWARD_MIN_WINDOWS", "2")):
+                return False, "walk_forward_insufficient_windows", stats
+            if not report["recent_stable"]:
+                return False, "recent_performance_unstable", stats
+            return False, "walk_forward_validation_failed", stats
+        return True, "validated_walk_forward", stats
 
     def qualified_agents(self, agent_ids, minimum_samples=None, minimum_accuracy=None, maximum_brier=None):
         qualified = []
