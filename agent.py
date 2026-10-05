@@ -122,7 +122,7 @@ class StrategyAgent:
         self.version = version
         self.mutation = mutation
 
-    def vote(self, market, fair, research=None):
+    def vote(self, market, fair, research=None, for_learning=False):
         edge = fair - market.yes_price
         if research is not None:
             if self.name == "momentum":
@@ -139,7 +139,7 @@ class StrategyAgent:
                 edge += 0.02 * research.news_score
             elif self.name == "cross_market_arbitrage":
                 edge += 0.03 * research.cross_market_score
-        if abs(edge) < 0.01:
+        if abs(edge) < 0.01 and not for_learning:
             return 0.0
 
         # Strategy diversity is deterministic and bounded. Replacements change
@@ -738,6 +738,10 @@ class TradingCompany:
         prelim.sort(key=lambda x: x[0], reverse=True)
         research_targets = [m for _, m in prelim[:MAX_RESEARCH_MARKETS]]
         print("[research] deep candidates:", len(research_targets))
+        # Persist real observed prices for the markets we actually research.
+        # This builds an out-of-sample local history without authorizing trades.
+        for observed in research_targets:
+            self.learning.record_observation(observed.market_id, observed.yes_price)
 
         research_by_id = {}
         for market in research_targets:
@@ -746,12 +750,15 @@ class TradingCompany:
                 research_by_id[market.market_id] = snapshot
                 # Learn from the forecast even when validation blocks trading.
                 # This is an observation loop, not a trade authorization path.
-                learning_votes, _, _, _, _ = self.debate(
-                    market,
-                    snapshot.fair_value,
-                    snapshot.fair_value - market.yes_price,
-                    snapshot,
-                )
+                # Learning uses each strategy's raw directional thesis, even
+                # when its trading vote abstains because the edge is small.
+                # This keeps calibration populated without weakening trade gates.
+                learning_votes = {
+                    a.agent_id: a.vote(
+                        market, snapshot.fair_value, snapshot, for_learning=True
+                    )
+                    for a in self.strategies
+                }
                 self.learning.record_forecast(
                     market.market_id,
                     market.question,
@@ -770,7 +777,8 @@ class TradingCompany:
                       "social=%.2f" % snapshot.social_score,
                       "cross=%.2f" % snapshot.cross_market_score,
                       "validation=%s" % snapshot.validation_reason,
-                      "val_acc=%.2f%%" % (snapshot.validation_accuracy * 100),
+                      "val_acc=" + (("%.2f%%" % (snapshot.validation_accuracy * 100)) if snapshot.validation_samples else "N/A"),
+                      "val_brier=" + (("%.4f" % snapshot.validation_brier) if snapshot.validation_samples else "N/A"),
                       "val_n=%d" % snapshot.validation_samples,
                       "sources=" + ",".join(k for k,v in snapshot.source_status.items() if v))
             except Exception as exc:
