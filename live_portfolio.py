@@ -102,6 +102,12 @@ class LivePortfolioLedger:
             "requested_size": float(requested_size),
             "status": status,
             "updated_at": time.time(),
+            "events": [{
+                "time": datetime.now(timezone.utc).isoformat(),
+                "status": status,
+                "matched_size": 0.0,
+                "average_fill_price": 0.0,
+            }],
         }
         self._save()
 
@@ -151,16 +157,25 @@ class LivePortfolioLedger:
                 "updated_at": time.time(),
             }
 
+        existing_order = self.orders.get(oid, {})
+        events = list(existing_order.get("events") or [])
+        events.append({
+            "time": datetime.now(timezone.utc).isoformat(),
+            "status": status,
+            "matched_size": matched,
+            "average_fill_price": avg,
+        })
         self.orders[oid] = {
             "market_id": key,
             "question": question,
             "side": side,
             "token_id": token_id,
-            "requested_size": max(requested, self.orders.get(oid, {}).get("requested_size", 0.0)),
+            "requested_size": max(requested, existing_order.get("requested_size", 0.0)),
             "matched_size": matched,
             "average_fill_price": avg,
             "status": status,
             "updated_at": time.time(),
+            "events": events[-100:],
         }
         # 'previous_cost' is intentionally not booked as realized P&L here:
         # order status changes are not exits. Realized P&L requires a sell or
