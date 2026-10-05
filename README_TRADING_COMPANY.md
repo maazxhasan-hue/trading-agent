@@ -1,5 +1,7 @@
 # Trading Company Layer
 
+> CI validation is required after each hardening step; live execution remains disabled by default.
+
 ## Pipeline
 
 SCAN -> RESEARCH -> FAIR VALUE -> DEBATE -> RED TEAM -> PORTFOLIO RISK -> EXECUTION RISK -> SIZING -> EXECUTION -> RECONCILIATION -> POST-TRADE -> AGENT HEALTH
