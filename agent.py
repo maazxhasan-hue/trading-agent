@@ -274,6 +274,7 @@ class RiskAgent:
 class TradingCompany:
     def __init__(self):
         self.bankroll = START_BANKROLL
+        self.peak_bankroll = START_BANKROLL
         self.feed = PolymarketPublicFeed()
         self.fair = FairValueAgent()
         self.risk = RiskAgent()
@@ -592,6 +593,7 @@ class TradingCompany:
             self.position_questions.pop(trade.proposal.market.market_id, None)
 
             self.bankroll += pnl
+            self.peak_bankroll = max(self.peak_bankroll, self.bankroll)
             print("[PAPER SETTLE]", "WIN" if won else "LOSS",
                   "pnl=%.2f" % pnl, "reason=", reason)
 
@@ -641,6 +643,11 @@ class TradingCompany:
                 print("[research] recovered:", repr(exc))
 
         candidates = []
+        max_drawdown = float(os.getenv("MAX_PORTFOLIO_DRAWDOWN_FRACTION", "0.10"))
+        drawdown = 1.0 - (self.bankroll / max(self.peak_bankroll, 1e-9))
+        if drawdown >= max_drawdown:
+            print("[risk] circuit breaker: drawdown=%.2f%%" % (drawdown * 100))
+            return
         for market in research_targets:
             proposal = self.evaluate(market, research_by_id.get(market.market_id))
             if proposal and self.risk.approve(proposal, self.bankroll):
