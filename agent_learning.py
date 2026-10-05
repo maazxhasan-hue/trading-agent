@@ -188,8 +188,7 @@ class AgentLearningStore:
                 remaining.append(item)
         self.data["pending"] = remaining[-self.max_pending:]
         self.data["history"] = self.data["history"][-self.max_history:]
-        if resolved or remaining != self.data["pending"]:
-            self._save()
+        self._save()
         return resolved
 
     def stats(self, agent):
