@@ -337,6 +337,16 @@ class TradingCompany:
                 print("[research gate] NO_TRADE", market.market_id,
                       "missing=" + ",".join(research.source_failures))
                 return None
+            if not research.validation_passed:
+                print(
+                    "[validation gate] NO_TRADE",
+                    market.market_id,
+                    "reason=" + research.validation_reason,
+                    "samples=" + str(research.validation_samples),
+                    "accuracy=%.2f%%" % (research.validation_accuracy * 100),
+                    "brier=%.4f" % research.validation_brier,
+                )
+                return None
             fair, base_conf = research.fair_value, research.confidence
         edge = fair - market.yes_price
         if abs(edge) < EDGE_MIN:
@@ -670,6 +680,9 @@ class TradingCompany:
                       "crypto=%.2f" % snapshot.crypto_score,
                       "social=%.2f" % snapshot.social_score,
                       "cross=%.2f" % snapshot.cross_market_score,
+                      "validation=%s" % snapshot.validation_reason,
+                      "val_acc=%.2f%%" % (snapshot.validation_accuracy * 100),
+                      "val_n=%d" % snapshot.validation_samples,
                       "sources=" + ",".join(k for k,v in snapshot.source_status.items() if v))
             except Exception as exc:
                 print("[research] recovered:", repr(exc))
