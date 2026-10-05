@@ -38,13 +38,16 @@ class AgentLearningStore:
                 raw = json.load(f)
             if not isinstance(raw, dict):
                 return default
-            for key in default:
-                raw.setdefault(key, [])
-            raw.setdefault("agents", {})
-            raw.setdefault("observations", {})
+            for key in ("pending", "history"):
+                if not isinstance(raw.get(key), list):
+                    raw[key] = []
+            for key in ("agents", "observations"):
+                if not isinstance(raw.get(key), dict):
+                    raw[key] = {}
             return raw
         except Exception:
             return default
+
 
     def _save(self):
         tmp = self.path + ".tmp"
