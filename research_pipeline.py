@@ -244,7 +244,7 @@ def _social(question):
         return 0.0, "unavailable_request_error"
 
 
-def research_market(market, markets):
+def research_market(market, markets, validation_history=None):
     warnings = []
     quality = ResearchQuality()
     fetched_at = time.time()
@@ -297,7 +297,10 @@ def research_market(market, markets):
         float(x.get("p")) for x in history
         if isinstance(x, dict) and x.get("p") is not None
     ]
-    validation = validate_fair_value_history(history_values)
+    # Prefer persisted local observations when they provide a longer real-price history.
+    local_history = [float(x) for x in (validation_history or []) if 0.0 < float(x) < 1.0]
+    validation_values = local_history if len(local_history) > len(history_values) else history_values
+    validation = validate_fair_value_history(validation_values)
     if not validation.passed:
         warnings.append("model_validation:" + validation.reason)
     fv = FairValueModel().estimate(
