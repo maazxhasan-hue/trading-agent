@@ -377,11 +377,28 @@ class TradingCompany:
         if len(qualified) < int(os.getenv("MIN_VALIDATED_AGENTS", "3")):
             return None
         qualified_ids = set(qualified)
-        votes = {
-            a.agent_id: a.vote(market, fair, research) * self.learning.weight(a.agent_id)
-            for a in self.strategies
-            if a.agent_id in qualified_ids
-        }
+        votes = {}
+        for a in self.strategies:
+            if a.agent_id not in qualified_ids:
+                continue
+            # Learning weight measures recent directional skill. Calibration
+            # adds a second, bounded quality signal from realized trade outcomes.
+            # Neither signal can dominate the debate or authorize a trade alone.
+            learning_weight = self.learning.weight(a.agent_id)
+            cal = self.calibration.stats(a.agent_id)
+            cal_weight = 1.0
+            if cal["n"] >= int(os.getenv("CALIBRATION_MIN_SAMPLES", "10")):
+                accuracy = float(cal["accuracy"])
+                brier = float(cal["brier"]) if cal["brier"] is not None else 0.25
+                cal_weight = max(
+                    0.80,
+                    min(1.20, 1.0 + 0.8 * (accuracy - 0.50) - 0.4 * max(0.0, brier - 0.20)),
+                )
+            votes[a.agent_id] = (
+                a.vote(market, fair, research)
+                * learning_weight
+                * cal_weight
+            )
         arguments = [
             agent.argument(market, fair, edge, votes)
             for agent in self.debate_agents
