@@ -38,6 +38,7 @@ START_BANKROLL = 1000.0
 SETTLE_AFTER_SECONDS = 300
 RESEARCH_MARKETS_PER_CYCLE = int(os.getenv("RESEARCH_MARKETS_PER_CYCLE", "25"))
 MAX_RESEARCH_MARKETS = max(1, min(100, RESEARCH_MARKETS_PER_CYCLE))
+LEARNING_SHADOW_MARKETS = max(0, min(100, int(os.getenv("LEARNING_SHADOW_MARKETS_PER_CYCLE", "15"))))
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "TradingCompanyAgent/2.0"})
@@ -766,8 +767,12 @@ class TradingCompany:
             print("[risk] feed degraded/stale: scan-only, no trade this cycle")
             return
 
-        # Rank the full universe cheaply, then deep-research only the strongest
-        # candidates so the constrained cloud runtime remains stable.
+        # Rank the full universe cheaply, then deep-research only a bounded
+        # number of markets. Trading candidates still require the full edge gate,
+        # but a separate shadow-learning set deliberately includes liquid markets
+        # even when their current edge is too small. Otherwise the validation
+        # system can deadlock: no 8% candidates -> no forecasts -> no qualified
+        # agents -> no future trades.
         prelim = []
         for market in markets:
             fair, confidence = self.fair.estimate(market)
@@ -775,8 +780,32 @@ class TradingCompany:
             if abs(edge) >= EDGE_MIN and market.liquidity > 0:
                 prelim.append((abs(edge) * confidence, market))
         prelim.sort(key=lambda x: x[0], reverse=True)
-        research_targets = [m for _, m in prelim[:MAX_RESEARCH_MARKETS]]
-        print("[research] deep candidates:", len(research_targets))
+
+        trade_targets = [m for _, m in prelim[:MAX_RESEARCH_MARKETS]]
+        selected_ids = {m.market_id for m in trade_targets}
+
+        shadow_ranked = sorted(
+            (
+                m for m in markets
+                if m.market_id not in selected_ids
+                and m.liquidity > 0
+                and 0.001 < m.yes_price < 0.999
+            ),
+            key=lambda m: (
+                float(m.liquidity),
+                float(m.volume),
+                abs(m.yes_price - 0.5),
+            ),
+            reverse=True,
+        )
+        shadow_targets = shadow_ranked[:LEARNING_SHADOW_MARKETS]
+        research_targets = trade_targets + shadow_targets
+
+        print(
+            "[research] deep candidates:", len(research_targets),
+            "trade_targets=", len(trade_targets),
+            "shadow_learning=", len(shadow_targets),
+        )
         # Persist real observed prices for the markets we actually research.
         # This builds an out-of-sample local history without authorizing trades.
         for observed in research_targets:
