@@ -118,7 +118,11 @@ class AgentLearningStore:
         d["incorrect"] += int(not correct)
         # Convert confidence into a probability for the direction forecast.
         confidence = min(0.95, max(0.50, float(confidence)))
-        p = confidence if direction == 1 else 1.0 - confidence
+        # Brier score is evaluated on the probability assigned to the
+        # forecasted direction. The outcome is 1 only when that direction
+        # occurs; an incorrect high-confidence forecast must therefore incur
+        # a large penalty rather than an artificially small one.
+        p = confidence
         d["brier_sum"] += (p - (1.0 if correct else 0.0)) ** 2
         d["last_updated"] = time.time()
 
