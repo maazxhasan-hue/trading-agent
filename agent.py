@@ -741,7 +741,9 @@ class TradingCompany:
         # Persist real observed prices for the markets we actually research.
         # This builds an out-of-sample local history without authorizing trades.
         for observed in research_targets:
-            self.learning.record_observation(observed.market_id, observed.yes_price)
+            self.learning.record_observation(observed.market_id, observed.yes_price, save=False)
+        if research_targets:
+            self.learning._save()
 
         research_by_id = {}
         for market in research_targets:
