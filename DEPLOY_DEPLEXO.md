@@ -1,6 +1,6 @@
 # Deplexo free deployment
 
-Deplexo currently offers a $0 tier with one always-on app and no credit card. Its free tier is constrained to 128 MB RAM, 0.25 CPU and 250 MB disk, so this repository uses a lightweight image on Deplexo.
+Deplexo currently offers a $0 tier with an always-on app and no credit card. Free-tier resources are constrained, and the exact CPU/RAM/disk limits can change, so this repository uses a lightweight image on Deplexo.
 
 ## Deploy
 
@@ -19,7 +19,7 @@ Deplexo currently offers a $0 tier with one always-on app and no credit card. It
 
 ## Free-tier limitation
 
-The free tier has only 128 MB RAM, so it cannot realistically keep Chromium/browser agents running. Dockerfile.deplexo intentionally omits Playwright/Chromium. This is a hosting limitation, not a removal from the overall trading-company architecture.
+The free tier is intentionally treated as a lightweight runtime and should not be expected to support a full Chromium/browser fleet. Dockerfile.deplexo intentionally omits Playwright/Chromium. This is a hosting limitation, not a removal from the overall trading-company architecture.
 
 Do not enable live trading on this constrained deployment. Use it for paper-mode orchestration, scanning and validation until it is moved to a larger runtime.
 
