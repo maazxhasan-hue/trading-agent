@@ -3,15 +3,28 @@ services:
     build: .
     restart: unless-stopped
     init: true
+    env_file:
+      - .env
     environment:
-      LIVE_TRADING: "false"
-      LIVE_TRADING_ARM: ""
       AGENT_BROWSER_HEADLESS: "true"
       SCAN_INTERVAL_SECONDS: "300"
+      AGENT_WORKSPACE_ROOT: /app/agent_workspaces
+      AGENT_HEALTH_FILE: /app/logs/agent_runtime_health.json
     volumes:
       - agent-state:/app/agent_workspaces
       - trading-logs:/app/logs
     stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from pathlib import Path; import time; p=Path('/app/logs/agent_runtime_health.json'); assert p.exists() and time.time()-p.stat().st_mtime < 900"
+      interval: 2m
+      timeout: 10s
+      retries: 3
+      start_period: 2m
+
 volumes:
   agent-state:
   trading-logs:
