@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 class AgentLearningStore:
-    def __init__(self, path=None, horizon_seconds=None, max_pending=5000, max_history=10000):
+    def __init__(self, path=None, horizon_seconds=None, max_pending=5000, max_history=10000, max_no_move_retries=6):
         state_root = "/data" if os.path.isdir("/data") else "."
         self.path = path or os.getenv(
             "AGENT_LEARNING_FILE",
@@ -26,6 +26,7 @@ class AgentLearningStore:
         )
         self.max_pending = max(100, int(max_pending))
         self.max_history = max(1000, int(max_history))
+        self.max_no_move_retries = max(1, int(os.getenv("LEARNING_MAX_NO_MOVE_RETRIES", max_no_move_retries)))
         Path(os.path.dirname(self.path) or ".").mkdir(parents=True, exist_ok=True)
         self.data = self._load()
 
@@ -91,20 +92,36 @@ class AgentLearningStore:
         }
         if not directions:
             return
+
+        # Keep at most one active forecast per market for a given horizon bucket.
+        # Without this guard, a flat market can accumulate duplicate forecasts
+        # every scan cycle while waiting for a meaningful outcome.
+        bucket = int(now // max(1, self.horizon_seconds))
+        market_key = str(market_id)
+        for item in self.data["pending"]:
+            if (
+                str(item.get("market_id")) == market_key
+                and int(float(item.get("created_at", 0)) // max(1, self.horizon_seconds)) == bucket
+            ):
+                return
+
         self.data["pending"].append({
             "created_at": now,
             "resolve_after": now + self.horizon_seconds,
-            "market_id": str(market_id),
+            "market_id": market_key,
             "question": question,
             "price": float(price),
             "edge": float(edge),
             "confidence": float(confidence),
             "directions": directions,
+            "no_move_retries": 0,
         })
         self.data["pending"] = self.data["pending"][-self.max_pending:]
         self._save()
 
     def _record_agent(self, agent, direction, outcome, confidence):
+        if outcome == 0:
+            return
         d = self.data["agents"].setdefault(agent, {
             "forecasts": 0,
             "correct": 0,
@@ -141,10 +158,23 @@ class AgentLearningStore:
                     continue
                 current = float(current)
                 previous = float(item["price"])
-                if abs(current - previous) < float(os.getenv("LEARNING_MIN_MOVE", "0.001")):
-                    # No directional outcome yet; retry once on a later cycle.
-                    item["resolve_after"] = now + self.horizon_seconds
-                    remaining.append(item)
+                min_move = float(os.getenv("LEARNING_MIN_MOVE", "0.005"))
+                if abs(current - previous) < min_move:
+                    # A flat market is not evidence that the directional thesis
+                    # was right or wrong. Give it a bounded number of extra
+                    # horizons, then record it as neutral so it cannot remain
+                    # pending forever.
+                    retries = int(item.get("no_move_retries", 0)) + 1
+                    if retries <= self.max_no_move_retries:
+                        item["no_move_retries"] = retries
+                        item["resolve_after"] = now + self.horizon_seconds
+                        remaining.append(item)
+                        continue
+                    item["resolved_at"] = now
+                    item["outcome"] = 0
+                    item["neutral"] = True
+                    self.data["history"].append(item)
+                    resolved += 1
                     continue
                 outcome = 1 if current > previous else -1
                 for agent, direction in item.get("directions", {}).items():
@@ -158,7 +188,7 @@ class AgentLearningStore:
                 remaining.append(item)
         self.data["pending"] = remaining[-self.max_pending:]
         self.data["history"] = self.data["history"][-self.max_history:]
-        if resolved:
+        if resolved or remaining != self.data["pending"]:
             self._save()
         return resolved
 
