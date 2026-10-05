@@ -290,6 +290,7 @@ class TradingCompany:
         self.open_trades = []
         self.position_questions = {}
         self.daily_pnl = 0.0
+        self.pnl_day_key = datetime.now(timezone.utc).date().isoformat()
         self.post_trade = PostTradeAnalyzer(os.getenv("POST_TRADE_FILE", "agent_health.json"))
         self.log = os.getenv("TRADING_LOG_FILE", "paper_trades.csv")
 
@@ -605,6 +606,11 @@ class TradingCompany:
         self.open_trades = remaining
 
     def cycle(self):
+        today = datetime.now(timezone.utc).date().isoformat()
+        if today != self.pnl_day_key:
+            self.daily_pnl = 0.0
+            self.pnl_day_key = today
+            print("[risk] daily P&L reset:", today)
         print("\n[" + datetime.now().isoformat(timespec="seconds")
               + "] scanning...")
         self.settle_due_trades()
