@@ -30,7 +30,7 @@ class AgentLearningStore:
         self.data = self._load()
 
     def _load(self):
-        default = {"pending": [], "history": [], "agents": {}}
+        default = {"pending": [], "history": [], "agents": {}, "observations": {}}
         if not os.path.exists(self.path):
             return default
         try:
@@ -41,6 +41,7 @@ class AgentLearningStore:
             for key in default:
                 raw.setdefault(key, [])
             raw.setdefault("agents", {})
+            raw.setdefault("observations", {})
             return raw
         except Exception:
             return default
@@ -54,6 +55,28 @@ class AgentLearningStore:
     @staticmethod
     def _direction(vote):
         return 1 if float(vote) > 0 else -1 if float(vote) < 0 else 0
+
+    def record_observation(self, market_id, price, now=None, max_points=120):
+        """Persist real observed market prices for walk-forward validation."""
+        try:
+            price = float(price)
+        except (TypeError, ValueError):
+            return
+        if not 0.0 < price < 1.0:
+            return
+        now = float(now if now is not None else time.time())
+        key = str(market_id)
+        rows = self.data["observations"].setdefault(key, [])
+        if rows and abs(float(rows[-1].get("price", 0.0)) - price) < 1e-9:
+            rows[-1]["time"] = now
+        else:
+            rows.append({"time": now, "price": price})
+        self.data["observations"][key] = rows[-max(8, int(max_points)):]
+        self._save()
+
+    def history_for_market(self, market_id):
+        rows = self.data["observations"].get(str(market_id), [])
+        return [float(x["price"]) for x in rows if isinstance(x, dict) and "price" in x]
 
     def record_forecast(self, market_id, question, price, votes, confidence, edge, now=None):
         now = float(now if now is not None else time.time())
