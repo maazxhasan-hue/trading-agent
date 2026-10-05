@@ -1,0 +1,11 @@
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+ENV PORT=8080
+ENV SCAN_INTERVAL_SECONDS=300
+ENV AGENT_WORKSPACE_ROOT=/data/agent_workspaces
+ENV AGENT_HEALTH_FILE=/data/logs/agent_runtime_health.json
+CMD ["python","agent_supervisor.py"]
