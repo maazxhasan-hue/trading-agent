@@ -35,3 +35,8 @@ require_event_calendar: false
 require_x_social: false
 revenge_trading: false
 averaging_down: false
+
+execution_risk:
+  max_slippage: 0.02
+  min_book_depth_multiple: 2.0
+  kill_switch: false
