@@ -46,6 +46,8 @@ class ResearchPipelineTests(unittest.TestCase):
         self.assertTrue(snapshot.source_status["order_book"])
         self.assertTrue(snapshot.source_status["crypto"])
         self.assertFalse(snapshot.source_status["x_social"])
+        self.assertTrue(snapshot.research_complete)
+        self.assertEqual(snapshot.source_failures, [])
 
     def test_cross_market_uses_market_id_field(self):
         market = FakeMarket("1", "Will bitcoin rise tomorrow?", 0.55)
@@ -82,6 +84,18 @@ class ResearchPipelineTests(unittest.TestCase):
         self.assertLessEqual(snapshot.fair_value, 0.99)
         self.assertGreaterEqual(snapshot.confidence, 0.50)
         self.assertLessEqual(snapshot.confidence, 0.95)
+
+    def test_incomplete_required_source_blocks_research(self):
+        market = FakeMarket("1", "Will bitcoin rise tomorrow?", 0.55)
+        with patch.object(research_pipeline, "price_history", return_value=[]), \
+             patch.object(research_pipeline, "_book", return_value=(0.10, 100.0, 0.0)), \
+             patch.object(research_pipeline, "_news", return_value=(0.70, [])), \
+             patch.object(research_pipeline, "_macro_event", return_value=(0.60, [])), \
+             patch.object(research_pipeline, "_crypto", return_value=(0.20, "ok")), \
+             patch.object(research_pipeline, "_social", return_value=(0.0, "unavailable_no_token")):
+            snapshot = research_pipeline.research_market(market, [market])
+        self.assertFalse(snapshot.research_complete)
+        self.assertIn("market_history", snapshot.source_failures)
 
 
 if __name__ == "__main__":
