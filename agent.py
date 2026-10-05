@@ -18,7 +18,7 @@ from typing import List
 import requests
 
 from agent_lifecycle import AgentLifecycleManager
-from market_data import markets as fetch_markets, price_history
+from market_data import markets as fetch_markets, price_history, feed_status
 from portfolio_risk import PortfolioRisk, Position
 from calibration import CalibrationTracker
 from execution_polymarket import LiveExecutionLocked, LiveOrderRequest, PolymarketExecution
@@ -635,7 +635,14 @@ class TradingCompany:
         self.settle_due_trades()
 
         markets = self.feed.fetch(MAX_MARKETS)
-        print("[scan] markets:", len(markets))
+        feed = feed_status()
+        print("[scan] markets:", len(markets), "feed_status=", feed["status"], "stale=", feed["stale"])
+        # Never make a trading decision from a stale cached universe. The cache
+        # exists to keep the scanner alive during transient upstream outages,
+        # not to authorize trades on old prices.
+        if feed["stale"]:
+            print("[risk] feed degraded/stale: scan-only, no trade this cycle")
+            return
 
         # Rank the full universe cheaply, then deep-research only the strongest
         # candidates so the constrained cloud runtime remains stable.
