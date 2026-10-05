@@ -24,7 +24,8 @@ class AgentState:
 
 
 class AgentLifecycleManager:
-    def __init__(self, path="agent_lifecycle.json", calibration_floor=0.55):
+    def __init__(self, path=None, calibration_floor=0.55):
+        path = path or os.getenv("AGENT_LIFECYCLE_FILE", "agent_lifecycle.json")
         self.path = path
         self.calibration_floor = calibration_floor
         self.agents = self._load()
