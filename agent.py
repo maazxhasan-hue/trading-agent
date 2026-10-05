@@ -98,7 +98,7 @@ class TradingCompany:
     def __init__(self):
         self.bankroll = START_BANKROLL
         self.feed = PolymarketPublicFeed()
-        self.fair = FairValueAgent()
+        self.fair = FairValueAgent(self.feed)
         self.strategies = [StrategyAgent(x) for x in [
             "momentum","mean_reversion","event_driven","crypto_specialist","x_social_research"
         ]]
