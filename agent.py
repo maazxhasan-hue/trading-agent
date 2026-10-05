@@ -22,6 +22,7 @@ from market_data import price_history
 from portfolio_risk import PortfolioRisk, Position
 from calibration import CalibrationTracker
 from execution_polymarket import LiveExecutionLocked, LiveOrderRequest, PolymarketExecution
+from research_pipeline import research_market
 
 
 SCAN_SECONDS = 300
@@ -31,6 +32,7 @@ CONFIDENCE_MIN = 0.80
 MAX_POSITION = 0.06
 START_BANKROLL = 1000.0
 SETTLE_AFTER_SECONDS = 300
+RESEARCH_MARKETS_PER_CYCLE = int(os.getenv("RESEARCH_MARKETS_PER_CYCLE", "12"))
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "TradingCompanyAgent/2.0"})
@@ -320,8 +322,11 @@ class TradingCompany:
         )
         return votes, arguments, flaws, attack_strength, base_conf
 
-    def evaluate(self, market):
-        fair, base_conf = self.fair.estimate(market)
+    def evaluate(self, market, research=None):
+        if research is None:
+            fair, base_conf = self.fair.estimate(market)
+        else:
+            fair, base_conf = research.fair_value, research.confidence
         edge = fair - market.yes_price
         if abs(edge) < EDGE_MIN:
             return None
@@ -565,9 +570,36 @@ class TradingCompany:
 
         markets = self.feed.fetch(MAX_MARKETS)
         print("[scan] markets:", len(markets))
-        candidates = []
+
+        # Rank the full universe cheaply, then deep-research only the strongest
+        # candidates so the constrained cloud runtime remains stable.
+        prelim = []
         for market in markets:
-            proposal = self.evaluate(market)
+            fair, confidence = self.fair.estimate(market)
+            edge = fair - market.yes_price
+            if abs(edge) >= EDGE_MIN and market.liquidity > 0:
+                prelim.append((abs(edge) * confidence, market))
+        prelim.sort(key=lambda x: x[0], reverse=True)
+        research_targets = [m for _, m in prelim[:RESEARCH_MARKETS_PER_CYCLE]]
+        print("[research] deep candidates:", len(research_targets))
+
+        research_by_id = {}
+        for market in research_targets:
+            try:
+                snapshot = research_market(market, markets)
+                research_by_id[market.market_id] = snapshot
+                print("[research]", market.market_id,
+                      "edge=%.2f%%" % ((snapshot.fair_value - market.yes_price) * 100),
+                      "confidence=%.2f%%" % (snapshot.confidence * 100),
+                      "book=%.2f" % snapshot.book_imbalance,
+                      "news=%d" % snapshot.news_count,
+                      "cross=%.2f" % snapshot.cross_market_score)
+            except Exception as exc:
+                print("[research] recovered:", repr(exc))
+
+        candidates = []
+        for market in research_targets:
+            proposal = self.evaluate(market, research_by_id.get(market.market_id))
             if proposal and self.risk.approve(proposal, self.bankroll):
                 ok, reason = self.portfolio_risk.approve(
                     proposal.position_fraction,
