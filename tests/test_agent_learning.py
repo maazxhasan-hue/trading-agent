@@ -20,6 +20,32 @@ class AgentLearningTests(unittest.TestCase):
             self.assertEqual(store.stats("momentum-v1")["accuracy"], 1.0)
             self.assertEqual(store.stats("bear-v1")["accuracy"], 0.0)
 
+
+    def test_duplicate_forecast_same_horizon_is_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentLearningStore(path=tmp + "/learning.json", horizon_seconds=300)
+            store.record_forecast("m1", "test", 0.50, {"agent-a": 1.0}, 0.80, 0.10, now=600.0)
+            store.record_forecast("m1", "test", 0.51, {"agent-a": 1.0}, 0.85, 0.10, now=650.0)
+            self.assertEqual(len(store.data["pending"]), 1)
+
+    def test_flat_market_eventually_resolves_as_neutral(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentLearningStore(
+                path=tmp + "/learning.json",
+                horizon_seconds=0,
+                max_no_move_retries=2,
+            )
+            store.record_forecast(
+                "m1", "test", 0.50,
+                {"agent-a": 1.0}, 0.90, 0.10, now=1.0,
+            )
+            self.assertEqual(store.resolve(lambda market_id: 0.50, now=2.0), 0)
+            self.assertEqual(store.resolve(lambda market_id: 0.50, now=3.0), 0)
+            self.assertEqual(store.resolve(lambda market_id: 0.50, now=4.0), 1)
+            self.assertEqual(len(store.data["history"]), 1)
+            self.assertEqual(store.data["history"][0]["outcome"], 0)
+            self.assertEqual(store.stats("agent-a")["forecasts"], 0)
+
     def test_brier_penalizes_wrong_high_confidence_forecast(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = AgentLearningStore(path=tmp + "/learning.json", horizon_seconds=0)
