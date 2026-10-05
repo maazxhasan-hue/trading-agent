@@ -121,7 +121,7 @@ def _cross_market(market, markets):
     words = set(re.findall(r"[a-z0-9]{4,}", market.question.lower()))
     peers = []
     for other in markets:
-        if other.market_id == market.market_id:
+        if other.id == market.id:
             continue
         other_words = set(re.findall(r"[a-z0-9]{4,}", other.question.lower()))
         overlap = len(words & other_words) / max(1, len(words | other_words))
