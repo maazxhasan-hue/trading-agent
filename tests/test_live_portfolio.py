@@ -30,6 +30,15 @@ class LivePortfolioLedgerTests(unittest.TestCase):
             ledger.reconcile_order("o1", "m1", "Q", "BUY_YES", "t1", 10, 3, 0.40, "FILLED")
             self.assertEqual(ledger.positions["m1"].matched_size, 6)
 
+    def test_resolution_books_realized_pnl(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = LivePortfolioLedger(tmp + "/ledger.json")
+            ledger.reconcile_order("o1", "m1", "Q", "BUY_YES", "t1", 10, 5, 0.40, "FILLED")
+            pnl = ledger.settle_position("m1", 1.0)
+            self.assertAlmostEqual(pnl, 3.0)
+            self.assertAlmostEqual(ledger.realized_pnl, 3.0)
+            self.assertNotIn("m1", ledger.positions)
+
     def test_unfilled_cancel_does_not_create_position(self):
         with tempfile.TemporaryDirectory() as tmp:
             ledger = LivePortfolioLedger(tmp + "/ledger.json")
