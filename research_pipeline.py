@@ -50,7 +50,7 @@ class ResearchSnapshot:
 def _history_signal(history):
     prices = [float(x.get("p")) for x in history if isinstance(x, dict) and x.get("p") is not None]
     if len(prices) < 8:
-        return 0.0, 0.0, 0.05, 0.50
+        return 0.0, 0.0, 0.05, 0.50, 0.50
     recent = prices[-30:]
     momentum = recent[-1] - recent[-8]
     mean = sum(recent) / len(recent)
