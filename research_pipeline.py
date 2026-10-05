@@ -11,6 +11,8 @@ import time
 import json
 import math
 import re
+
+from model_validation import validate_fair_value_history
 import xml.etree.ElementTree as ET
 
 import requests
@@ -64,6 +66,11 @@ class ResearchSnapshot:
     fair_value_components: dict = field(default_factory=dict)
     best_bid: float = 0.0
     best_ask: float = 0.0
+    validation_passed: bool = False
+    validation_samples: int = 0
+    validation_accuracy: float = 0.0
+    validation_brier: float = 1.0
+    validation_reason: str = "not_run"
 
 
 def _history_signal(history):
@@ -290,6 +297,9 @@ def research_market(market, markets):
         float(x.get("p")) for x in history
         if isinstance(x, dict) and x.get("p") is not None
     ]
+    validation = validate_fair_value_history(history_values)
+    if not validation.passed:
+        warnings.append("model_validation:" + validation.reason)
     fv = FairValueModel().estimate(
         current=market.yes_price,
         history_fair=historical_fair,
@@ -348,4 +358,9 @@ def research_market(market, markets):
         fair_value_components=fv.components,
         best_bid=best_bid,
         best_ask=best_ask,
+        validation_passed=validation.passed,
+        validation_samples=validation.samples,
+        validation_accuracy=validation.accuracy,
+        validation_brier=validation.brier,
+        validation_reason=validation.reason,
     )
