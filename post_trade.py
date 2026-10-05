@@ -1,8 +1,21 @@
-import json,os
+import json, os
+
+
+def _default_state_path(filename):
+    if os.path.isdir("/data"):
+        return os.path.join("/data", filename)
+    return filename
+
+
 class PostTradeAnalyzer:
-    def __init__(self,path="agent_health.json"):
-        self.path=path
-    def record(self,agent,thesis,entry,outcome,reason):
+    def __init__(self, path=None):
+        self.path = path or os.getenv(
+            "POST_TRADE_FILE",
+            _default_state_path("agent_health.json"),
+        )
+        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+
+    def record(self, agent, thesis, entry, outcome, reason):
         data={}
         if os.path.exists(self.path):
             try:
