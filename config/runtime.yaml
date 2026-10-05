@@ -40,3 +40,14 @@ execution_risk:
   max_slippage: 0.02
   min_book_depth_multiple: 2.0
   kill_switch: false
+
+market_feed:
+  endpoint: gamma_markets_keyset
+  page_size: 100
+  min_request_interval_seconds: 2
+  request_retries: 3
+  backoff_base_seconds: 2
+  max_retry_wait_seconds: 60
+  cache_file: /data/gamma_markets_cache.json
+  cache_max_age_seconds: 900
+  stale_cache_is_scan_only: true
