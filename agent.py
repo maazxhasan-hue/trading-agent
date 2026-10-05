@@ -271,6 +271,18 @@ class TradingCompany:
                 name: runtime_manager.provision(name)
                 for name in strategy_ids
             }
+        self.runtime_manager = runtime_manager
+        self.agent_runtimes = {}
+        if runtime_manager is not None:
+            strategy_ids = [
+                "momentum", "mean_reversion", "event_driven",
+                "crypto_specialist", "x_social_research",
+                "cross_market_arbitrage",
+            ]
+            self.agent_runtimes = {
+                name: runtime_manager.provision(name)
+                for name in strategy_ids
+            }
         self.peak_bankroll = START_BANKROLL
         self.feed = PolymarketPublicFeed()
         self.fair = FairValueAgent()
