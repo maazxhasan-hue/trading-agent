@@ -72,6 +72,64 @@ class AgentSupervisor:
                 "live_trading_authorized": False,
             }
 
+    def metrics(self):
+        try:
+            from market_data import feed_status
+            from agent_learning import AgentLearningStore
+            store = AgentLearningStore()
+            metrics_path = os.getenv(
+                "PAPER_METRICS_FILE",
+                "/data/paper_metrics.json" if os.path.isdir("/data") else "paper_metrics.json",
+            )
+            paper = {}
+            if os.path.exists(metrics_path):
+                with open(metrics_path, encoding="utf-8") as f:
+                    raw = json.load(f)
+                    paper = raw if isinstance(raw, dict) else {}
+            return {
+                "feed": feed_status(),
+                "validation": self.validation(),
+                "paper": paper,
+                "live_trading_authorized": False,
+            }
+        except Exception as exc:
+            return {"status": "unavailable", "error": repr(exc), "live_trading_authorized": False}
+
+    def dashboard_html(self):
+        data = self.metrics()
+        validation = data.get("validation", {})
+        agents = validation.get("agents", {})
+        rows = "".join(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
+                a,
+                v.get("forecasts", 0),
+                "N/A" if v.get("accuracy") is None else "{:.1%}".format(v["accuracy"]),
+                "N/A" if v.get("brier") is None else "{:.4f}".format(v["brier"]),
+                "YES" if v.get("qualified") else "NO",
+            )
+            for a, v in sorted(agents.items())
+        )
+        return """<!doctype html><html><head><meta charset="utf-8">
+<title>Trading Company Validation</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:system-ui;margin:2rem;line-height:1.4}table{border-collapse:collapse;width:100%%}th,td{padding:.55rem;border:1px solid #ccc;text-align:left}code{background:#eee;padding:.15rem .3rem}.ok{font-weight:700}</style>
+</head><body><h1>Trading Company — Validation</h1>
+<p class="ok">Status: {status}</p>
+<p>Qualified: <b>{qualified}</b> / <b>{required}</b> &nbsp; | &nbsp; Resolved forecasts: <b>{resolved}</b> &nbsp; | &nbsp; Pending: <b>{pending}</b></p>
+<p>Feed: <b>{feed_status}</b> (stale={stale})</p>
+<table><thead><tr><th>Agent</th><th>Forecasts</th><th>Accuracy</th><th>Brier</th><th>Qualified</th></tr></thead><tbody>{rows}</tbody></table>
+<p><small>Paper validation only. Live trading is not authorized.</small></p>
+</body></html>""".format(
+            status=validation.get("status", "unknown"),
+            qualified=validation.get("qualified_count", 0),
+            required=validation.get("required", 3),
+            resolved=validation.get("resolved_forecasts", 0),
+            pending=validation.get("pending_forecasts", 0),
+            feed_status=data.get("feed", {}).get("status", "unknown"),
+            stale=data.get("feed", {}).get("stale", True),
+            rows=rows,
+        )
+
     def run_health_server(self):
         port = int(os.getenv("PORT", "8080"))
 
@@ -81,6 +139,16 @@ class AgentSupervisor:
                     payload = {"status": "ok", "service": "trading-company"}
                 elif self.path == "/validation":
                     payload = self.validation()
+                elif self.path == "/metrics":
+                    payload = self.metrics()
+                elif self.path == "/dashboard":
+                    body = self.dashboard_html().encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 else:
                     self.send_response(404)
                     self.end_headers()
