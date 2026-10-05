@@ -1,0 +1,16 @@
+services:
+  trading-company:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      LIVE_TRADING: "false"
+      LIVE_TRADING_ARM: ""
+      AGENT_BROWSER_HEADLESS: "true"
+    volumes:
+      - agent-state:/app/agent_workspaces
+      - trading-logs:/app/logs
+    stop_grace_period: 30s
+volumes:
+  agent-state:
+  trading-logs:
