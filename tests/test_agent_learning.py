@@ -20,6 +20,16 @@ class AgentLearningTests(unittest.TestCase):
             self.assertEqual(store.stats("momentum-v1")["accuracy"], 1.0)
             self.assertEqual(store.stats("bear-v1")["accuracy"], 0.0)
 
+    def test_brier_penalizes_wrong_high_confidence_forecast(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentLearningStore(path=tmp + "/learning.json", horizon_seconds=0)
+            store.record_forecast(
+                "m1", "test", 0.50,
+                {"agent-a": 1.0}, 0.90, 0.10, now=1.0,
+            )
+            store.resolve(lambda market_id: 0.40, now=2.0)
+            self.assertAlmostEqual(store.stats("agent-a")["brier"], 0.81)
+
     def test_small_edge_forecast_is_recorded_by_store(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = AgentLearningStore(path=tmp + "/learning.json", horizon_seconds=0)
