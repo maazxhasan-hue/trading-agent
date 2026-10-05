@@ -341,6 +341,10 @@ class TradingCompany:
         if research is None:
             fair, base_conf = self.fair.estimate(market)
         else:
+            if not research.research_complete:
+                print("[research gate] NO_TRADE", market.market_id,
+                      "missing=" + ",".join(research.source_failures))
+                return None
             fair, base_conf = research.fair_value, research.confidence
         edge = fair - market.yes_price
         if abs(edge) < EDGE_MIN:
