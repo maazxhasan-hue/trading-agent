@@ -46,22 +46,22 @@ class AgentLearningTests(unittest.TestCase):
             self.assertEqual(stats["forecasts"], 0)
 
             store.data["agents"]["trained-agent"] = {
-                "forecasts": 20,
-                "correct": 15,
-                "incorrect": 5,
+                "forecasts": 30,
+                "correct": 20,
+                "incorrect": 10,
                 "brier_sum": 4.0,
                 "last_updated": 1.0,
             }
             ok, reason, stats = store.qualification("trained-agent")
             self.assertTrue(ok)
             self.assertEqual(reason, "validated")
-            self.assertEqual(stats["accuracy"], 0.75)
+            self.assertAlmostEqual(stats["accuracy"], 20 / 30)
 
     def test_qualified_agents_reports_unqualified_and_qualified(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = AgentLearningStore(path=tmp + "/learning.json")
             store.data["agents"]["good"] = {
-                "forecasts": 20, "correct": 15, "incorrect": 5,
+                "forecasts": 30, "correct": 20, "incorrect": 10,
                 "brier_sum": 4.0, "last_updated": 1.0,
             }
             qualified, details = store.qualified_agents(["good", "new"])
@@ -85,7 +85,7 @@ class AgentLearningTests(unittest.TestCase):
     def test_weight_changes_after_enough_observations(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = AgentLearningStore(path=tmp + "/learning.json", horizon_seconds=0)
-            for i in range(20):
+            for i in range(30):
                 store.record_forecast(
                     "m" + str(i), "test", 0.50,
                     {"momentum-v1": 1.0}, 0.80, 0.10, now=float(i)
