@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+agent_workspaces/
+browser-profile/
+*.csv
+agent_lifecycle.json
+agent_calibration.json
+agent_health.json
+logs/
