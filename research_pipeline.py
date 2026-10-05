@@ -50,6 +50,8 @@ class ResearchSnapshot:
     source_status: dict = field(default_factory=dict)
     evidence: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
+    research_complete: bool = True
+    source_failures: list = field(default_factory=list)
 
 
 def _history_signal(history):
@@ -68,6 +70,14 @@ def _history_signal(history):
     ))
     confidence = max(0.50, min(0.95, 0.90 - 2.0 * volatility))
     return momentum, reversion, volatility, fair, confidence
+
+
+def _token_id(market):
+    return str(getattr(market, "yes_token_id", "") or getattr(market, "yes_token", "") or "")
+
+
+def _market_id(market):
+    return str(getattr(market, "market_id", "") or getattr(market, "id", "") or "")
 
 
 def _book(token_id):
@@ -126,7 +136,7 @@ def _cross_market(market, markets):
     words = set(re.findall(r"[a-z0-9]{4,}", market.question.lower()))
     peers = []
     for other in markets:
-        if other.id == market.id:
+        if _market_id(other) == _market_id(market):
             continue
         other_words = set(re.findall(r"[a-z0-9]{4,}", other.question.lower()))
         overlap = len(words & other_words) / max(1, len(words | other_words))
@@ -203,7 +213,7 @@ def _social(question):
 def research_market(market, markets):
     warnings = []
     try:
-        history = price_history(market.yes_token, interval="1d", fidelity=60)
+        history = price_history(_token_id(market), interval="1d", fidelity=60)
         momentum, reversion, volatility, historical_fair, historical_conf = _history_signal(history)
     except Exception:
         history = []
@@ -213,13 +223,14 @@ def research_market(market, markets):
         historical_conf = 0.50
         warnings.append("historical_data_unavailable")
 
-    imbalance, depth, _ = _book(market.yes_token)
-    news_score, evidence = _news(market.question)
+    token_id = _token_id(market)
+    imbalance, depth, _ = _book(token_id)
+    news_score, news_evidence = _news(market.question)
     macro_score, macro_evidence = _macro_event(market.question)
     crypto_score, crypto_status = _crypto(market.question)
     social_score, social_status = _social(market.question)
     cross = _cross_market(market, markets)
-    evidence = (evidence + macro_evidence)[:10]
+    evidence = (news_evidence + macro_evidence)[:10]
 
     # Independent fair-value components. Do not let news/social evidence directly
     # become a probability; it only adjusts confidence and creates an audit trail.
@@ -238,13 +249,26 @@ def research_market(market, markets):
         0.05 * min(0.95, 0.50 + abs(social_score) * 0.45) +
         0.10 * min(0.95, 0.50 + abs(cross) * 0.45)
     ))
+    applicable = {"market_history": True, "order_book": True, "news": True, "macro_event": True}
+    if crypto_status == "not_applicable":
+        applicable["crypto"] = False
+    status = {
+        "market_history": bool(history), "order_book": bool(depth),
+        "news": bool(news_evidence), "macro_event": bool(macro_evidence),
+        "crypto": crypto_status == "ok",
+    }
+    failures = [name for name, required in applicable.items() if required and not status.get(name, False)]
+    complete = not failures
+    if failures:
+        warnings.extend("research_source_unavailable:" + name for name in failures)
+
     return ResearchSnapshot(
         fair, confidence, momentum, reversion, volatility, imbalance, depth,
-        news_score, len(evidence), cross,
+        news_score, len(news_evidence), cross,
         macro_score, crypto_score, social_score,
         {"market_history": bool(history), "order_book": bool(depth),
-         "news": bool(evidence), "macro_event": bool(macro_evidence),
+         "news": bool(news_evidence), "macro_event": bool(macro_evidence),
          "crypto": crypto_status == "ok", "x_social": social_status == "ok",
          "cross_market": bool(cross)},
-        evidence, warnings
+        evidence, warnings, complete, failures
     )
