@@ -164,6 +164,35 @@ class AgentLearningStore:
             "brier": (d.get("brier_sum", 0.0) / n) if n else None,
         }
 
+    def qualification(self, agent, minimum_samples=None, minimum_accuracy=None, maximum_brier=None):
+        """Return a conservative trading-eligibility decision for one agent."""
+        minimum_samples = int(os.getenv("LEARNING_MIN_SAMPLES", "20")) if minimum_samples is None else int(minimum_samples)
+        minimum_accuracy = float(os.getenv("LEARNING_MIN_ACCURACY", "0.55")) if minimum_accuracy is None else float(minimum_accuracy)
+        maximum_brier = float(os.getenv("LEARNING_MAX_BRIER", "0.25")) if maximum_brier is None else float(maximum_brier)
+        stats = self.stats(agent)
+        if stats["forecasts"] < minimum_samples:
+            return False, "insufficient_samples", stats
+        if stats["accuracy"] is None or stats["accuracy"] < minimum_accuracy:
+            return False, "accuracy_below_threshold", stats
+        if stats["brier"] is None or stats["brier"] > maximum_brier:
+            return False, "brier_above_threshold", stats
+        return True, "validated", stats
+
+    def qualified_agents(self, agent_ids, minimum_samples=None, minimum_accuracy=None, maximum_brier=None):
+        qualified = []
+        details = {}
+        for agent in agent_ids:
+            ok, reason, stats = self.qualification(
+                agent, minimum_samples, minimum_accuracy, maximum_brier
+            )
+            details[agent] = {"qualified": ok, "reason": reason, **stats}
+            if ok:
+                qualified.append(agent)
+        return qualified, details
+
+    def observation_count(self):
+        return sum(len(rows) for rows in self.data.get("observations", {}).values())
+
     def weight(self, agent, minimum_samples=20):
         stats = self.stats(agent)
         n = stats["forecasts"]
