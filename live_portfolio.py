@@ -184,6 +184,20 @@ class LivePortfolioLedger:
         self.positions.pop(key, None)
         self._save()
 
+    def settle_position(self, market_id, payout_price):
+        """Book realized P&L for a resolved position and remove it."""
+        key = str(market_id)
+        position = self.positions.get(key)
+        if not position:
+            return 0.0
+        payout = max(0.0, min(1.0, float(payout_price)))
+        pnl = position.matched_size * payout - position.cost_basis
+        self._roll_day()
+        self.realized_pnl += pnl
+        self.positions.pop(key, None)
+        self._save()
+        return pnl
+
     def unrealized_pnl(self):
         total = 0.0
         for p in self.positions.values():
