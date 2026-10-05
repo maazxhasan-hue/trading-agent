@@ -4,6 +4,7 @@ max_markets_per_scan: 1000
 research_markets_per_cycle: 25
 max_research_markets: 100
 max_research_age_seconds: 900
+learning_shadow_markets_per_cycle: 15
 edge_min_pct: 8.0
 confidence_min: 0.80
 max_position_fraction: 0.06
