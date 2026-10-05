@@ -56,7 +56,7 @@ class AgentLearningStore:
     def _direction(vote):
         return 1 if float(vote) > 0 else -1 if float(vote) < 0 else 0
 
-    def record_observation(self, market_id, price, now=None, max_points=120):
+    def record_observation(self, market_id, price, now=None, max_points=120, save=True):
         """Persist real observed market prices for walk-forward validation."""
         try:
             price = float(price)
@@ -72,7 +72,8 @@ class AgentLearningStore:
         else:
             rows.append({"time": now, "price": price})
         self.data["observations"][key] = rows[-max(8, int(max_points)):]
-        self._save()
+        if save:
+            self._save()
 
     def history_for_market(self, market_id):
         rows = self.data["observations"].get(str(market_id), [])
