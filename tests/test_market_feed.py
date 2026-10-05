@@ -69,6 +69,7 @@ class GammaFeedTests(unittest.TestCase):
         self.assertEqual([m.id for m in result], ["m1", "m2"])
         self.assertEqual(get.call_args_list[1].kwargs["params"]["after_cursor"], "CURSOR-1")
         self.assertEqual(get.call_args_list[0].kwargs["params"]["closed"], "false")
+        self.assertEqual(get.call_args_list[0].kwargs["params"]["active"], "true")
 
     def test_rate_limit_uses_last_good_cache(self):
         with tempfile.TemporaryDirectory() as tmp:
