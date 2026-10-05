@@ -99,7 +99,7 @@ class AgentLearningTests(unittest.TestCase):
                 })
             ok, reason, stats = store.qualification("trained-agent")
             self.assertFalse(ok)
-            self.assertEqual(reason, "walk_forward_validation_failed")
+            self.assertEqual(reason, "recent_performance_unstable")
             self.assertAlmostEqual(stats["accuracy"], 20 / 30)
             self.assertEqual(stats["validation"]["walk_forward_windows"], 2)
 
