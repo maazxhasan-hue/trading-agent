@@ -16,6 +16,12 @@ class ExecutionRiskTests(unittest.TestCase):
         self.assertFalse(d.approved)
         self.assertEqual(d.reason, "insufficient_book_depth")
 
+    def test_slippage_guard_rejects_bad_ask(self):
+        gate = ExecutionRiskGate(max_slippage=0.02, min_book_depth_multiple=1.0)
+        d = gate.approve(0.03, 1000, 0.50, 0.60, 100, 0)
+        self.assertFalse(d.approved)
+        self.assertEqual(d.reason, "slippage_limit")
+
     def test_valid_trade_passes(self):
         gate = ExecutionRiskGate(min_book_depth_multiple=1.0)
         d = gate.approve(0.03, 1000, 0.50, None, 100, 0)
