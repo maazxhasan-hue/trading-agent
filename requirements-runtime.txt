@@ -1,0 +1,2 @@
+# Optional cloud runtime capabilities.
+playwright>=1.50,<2
