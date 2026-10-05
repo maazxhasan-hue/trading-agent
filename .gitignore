@@ -10,3 +10,6 @@ agent_lifecycle.json
 agent_calibration.json
 agent_health.json
 logs/
+
+paper_metrics.json
+paper_trades.csv
