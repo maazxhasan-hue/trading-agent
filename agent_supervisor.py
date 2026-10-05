@@ -1,10 +1,11 @@
-"""Cloud supervisor for isolated trading agents.
-
-Runs independently of the user's laptop. It provisions one runtime per agent,
-checks runtime health, and invokes the trading engine on its configured cadence.
-"""
-import os, time, json
+"""Cloud supervisor for isolated trading agents."""
+import os
+import time
+import json
+import threading
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
 from agent_runtime import AgentRuntimeManager
 
 AGENTS = [
@@ -42,7 +43,30 @@ class AgentSupervisor:
                 "agents": self.health(),
             }, f, indent=2)
 
+    def run_health_server(self):
+        port = int(os.getenv("PORT", "8080"))
+
+        class HealthHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path not in ("/", "/health", "/healthz"):
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                body = b'{"status":"ok","service":"trading-company"}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):
+                return
+
+        server = ThreadingHTTPServer(("0.0.0.0", port), HealthHandler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+
     def run(self):
+        self.run_health_server()
         from agent import TradingCompany
         company = TradingCompany()
         interval = int(os.getenv("SCAN_INTERVAL_SECONDS", "300"))
