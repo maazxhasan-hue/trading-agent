@@ -4,10 +4,15 @@ live_execution_requires_arm: true
 max_live_order_fraction: 0.06
 scan_interval_seconds: 300
 max_markets_per_scan: 1000
+research_markets_per_cycle: 25
+max_research_markets: 100
+max_research_age_seconds: 900
 edge_min_pct: 8.0
 confidence_min: 0.80
 kelly_fraction: 0.25
 max_position_fraction: 0.06
+max_portfolio_exposure_fraction: 0.18
+max_correlated_exposure_fraction: 0.09
 require_positive_ev_after_costs: true
 require_fresh_data: true
 require_liquidity_check: true
@@ -15,6 +20,8 @@ require_red_team_clearance: true
 allow_automatic_live_orders: false
 max_daily_loss_fraction: 0.03
 max_portfolio_drawdown_fraction: 0.10
+require_event_calendar: false
+require_x_social: false
 revenge_trading: false
 averaging_down: false
 loss_policy: diagnose_then_requalify
