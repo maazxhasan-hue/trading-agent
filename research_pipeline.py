@@ -6,6 +6,7 @@ the free deployment runs without it.
 """
 from dataclasses import dataclass, field
 from email.utils import parsedate_to_datetime
+import os
 from urllib.parse import quote_plus
 import json
 import math
@@ -43,6 +44,10 @@ class ResearchSnapshot:
     news_score: float
     news_count: int
     cross_market_score: float
+    macro_score: float = 0.0
+    crypto_score: float = 0.0
+    social_score: float = 0.0
+    source_status: dict = field(default_factory=dict)
     evidence: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
 
@@ -133,6 +138,68 @@ def _cross_market(market, markets):
     return max(-1.0, min(1.0, (mean - market.yes_price) / 0.10))
 
 
+
+def _macro_event(question):
+    macro_terms = "interest rates inflation central bank jobs GDP election regulation court approval deadline"
+    score, evidence = _news(question + " " + macro_terms)
+    return score, evidence
+
+
+def _crypto(question):
+    text = question.lower()
+    assets = []
+    for key, asset in (("bitcoin", "bitcoin"), ("btc", "bitcoin"),
+                       ("ethereum", "ethereum"), ("eth", "ethereum"),
+                       ("solana", "solana"), ("sol", "solana")):
+        if key in text and asset not in assets:
+            assets.append(asset)
+    if not assets:
+        return 0.0, "not_applicable"
+    try:
+        params = {
+            "ids": ",".join(assets),
+            "vs_currencies": "usd",
+            "include_24hr_change": "true",
+        }
+        r = SESSION.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params=params,
+            timeout=5,
+        )
+        r.raise_for_status()
+        data = r.json()
+        changes = [
+            float(data[a].get("usd_24h_change", 0.0))
+            for a in assets
+            if isinstance(data.get(a), dict)
+        ]
+        if not changes:
+            return 0.0, "unavailable"
+        return max(-1.0, min(1.0, sum(changes) / len(changes) / 10.0)), "ok"
+    except Exception:
+        return 0.0, "unavailable"
+
+
+def _social(question):
+    token = os.getenv("X_BEARER_TOKEN", "").strip()
+    if not token:
+        return 0.0, "unavailable_no_token"
+    try:
+        query = " ".join(re.findall(r"[A-Za-z0-9_]{3,}", question)[:8])
+        if not query:
+            return 0.0, "unavailable_no_query"
+        r = SESSION.get(
+            "https://api.x.com/2/tweets/search/recent",
+            params={"query": query + " -is:retweet", "max_results": 10},
+            headers={"Authorization": "Bearer " + token},
+            timeout=8,
+        )
+        r.raise_for_status()
+        rows = r.json().get("data") or []
+        return min(1.0, len(rows) / 10.0), "ok"
+    except Exception:
+        return 0.0, "unavailable_request_error"
+
 def research_market(market, markets):
     warnings = []
     try:
@@ -148,7 +215,11 @@ def research_market(market, markets):
 
     imbalance, depth, _ = _book(market.yes_token)
     news_score, evidence = _news(market.question)
+    macro_score, macro_evidence = _macro_event(market.question)
+    crypto_score, crypto_status = _crypto(market.question)
+    social_score, social_status = _social(market.question)
     cross = _cross_market(market, markets)
+    evidence = (evidence + macro_evidence)[:10]
 
     # Independent fair-value components. Do not let news/social evidence directly
     # become a probability; it only adjusts confidence and creates an audit trail.
@@ -161,10 +232,19 @@ def research_market(market, markets):
     confidence = max(0.50, min(0.95,
         0.55 * historical_conf +
         0.20 * min(0.95, 0.50 + abs(imbalance) * 0.45) +
-        0.15 * min(0.95, 0.50 + news_score * 0.45) +
+        0.10 * min(0.95, 0.50 + news_score * 0.45) +
+        0.10 * min(0.95, 0.50 + macro_score * 0.45) +
+        0.05 * min(0.95, 0.50 + abs(crypto_score) * 0.45) +
+        0.05 * min(0.95, 0.50 + abs(social_score) * 0.45) +
         0.10 * min(0.95, 0.50 + abs(cross) * 0.45)
     ))
     return ResearchSnapshot(
         fair, confidence, momentum, reversion, volatility, imbalance, depth,
-        news_score, len(evidence), cross, evidence, warnings
+        news_score, len(evidence), cross,
+        macro_score, crypto_score, social_score,
+        {"market_history": bool(history), "order_book": bool(depth),
+         "news": bool(evidence), "macro_event": bool(macro_evidence),
+         "crypto": crypto_status == "ok", "x_social": social_status == "ok",
+         "cross_market": bool(cross)},
+        evidence, warnings
     )
