@@ -74,11 +74,16 @@ class AgentLifecycleManager:
                 a.wins += 1
             else:
                 a.losses += 1
+                a.rule_violations += 1
                 a.last_failure = failure_reason
             total = a.wins + a.losses
             a.fitness = a.wins / total if total else 0.50
             if not won:
-                a.status = "QUARANTINED"
+                # One loss records a violation; quarantine only after the
+                # configured repeated-failure threshold.
+                threshold = max(1, int(os.getenv("QUARANTINE_AFTER_RULE_VIOLATIONS", "2")))
+                if a.rule_violations >= threshold:
+                    a.status = "QUARANTINED"
             self._save()
 
     def kill(self, agent_id, reason):
