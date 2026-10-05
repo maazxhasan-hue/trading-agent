@@ -51,7 +51,8 @@ class ExecutionRiskGate:
             slippage = max(0.0, (best_ask - order_price) / best_ask)
             if slippage > self.max_slippage:
                 return RiskDecision(False, 0.0, "slippage_limit")
-        required_depth = bankroll * fraction * self.min_book_depth_multiple
+        stake = bankroll * fraction
+        required_depth = (stake / max(order_price, 0.001)) * self.min_book_depth_multiple
         if book_depth < required_depth:
             return RiskDecision(False, 0.0, "insufficient_book_depth")
         return RiskDecision(True, fraction, "approved")
