@@ -26,3 +26,7 @@ revenge_trading: false
 averaging_down: false
 loss_policy: diagnose_then_requalify
 subscription_spend_from_trading_capital: false
+
+max_execution_slippage: 0.02
+min_book_depth_multiple: 2.0
+kill_switch: false
