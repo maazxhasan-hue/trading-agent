@@ -66,6 +66,8 @@ class OpenTrade:
     entry_yes_price: float
     opened_at: float
     stake: float
+    order_id: str = ""
+    live: bool = False
 
 
 class PolymarketPublicFeed:
@@ -260,6 +262,10 @@ class TradingCompany:
         self.calibration = CalibrationTracker()
         self.lifecycle = AgentLifecycleManager()
         self.execution = PolymarketExecution()
+        self.debate_agents = [DebateAgent("bull"), DebateAgent("bear"),
+                              DebateAgent("quant"), DebateAgent("news_social")]
+        self.red_team = RedTeamAgent()
+        self.chief = ChiefDecisionAgent()
         self.positions = []
         self.open_trades = []
         self.daily_pnl = 0.0
@@ -369,6 +375,7 @@ class TradingCompany:
             else 1 - proposal.market.yes_price
         )
 
+        order_id = ""
         if self.execution.enabled:
             if not token_id:
                 raise LiveExecutionLocked("Selected market has no CLOB token ID.")
@@ -381,7 +388,10 @@ class TradingCompany:
                     side="BUY",
                 )
             )
-            print("[LIVE ORDER SUBMITTED]", response)
+            order_id = self.execution.order_id(response) or ""
+            if not order_id:
+                raise LiveExecutionLocked("Execution response contained no order id.")
+            print("[LIVE ORDER SUBMITTED]", order_id)
             decision_label = "LIVE_ORDER_SUBMITTED"
         else:
             decision_label = "PAPER_ORDER"
@@ -391,6 +401,8 @@ class TradingCompany:
             entry_yes_price=proposal.market.yes_price,
             opened_at=time.time(),
             stake=stake,
+            order_id=order_id,
+            live=self.execution.enabled,
         )
         self.open_trades.append(trade)
         self.positions.append(
@@ -469,7 +481,28 @@ class TradingCompany:
         print("[ADAPT] activated:", ", ".join(replacement_ids),
               "validation=%.2f" % score)
 
+    def reconcile_live_orders(self):
+        if not self.execution.enabled:
+            return
+        for trade in list(self.open_trades):
+            if not trade.order_id:
+                continue
+            try:
+                state = self.execution.get_order(trade.order_id) or {}
+                status = str(state.get("status", "")).upper()
+                matched = state.get("size_matched", state.get("sizeMatched", ""))
+                print("[LIVE RECONCILE]", trade.order_id, status, matched)
+                if status in {"CANCELED", "CANCELLED", "REJECTED"}:
+                    self.open_trades.remove(trade)
+                    self.positions = [p for p in self.positions
+                                      if p.market_id != trade.proposal.market.market_id]
+            except Exception as exc:
+                print("[LIVE RECONCILE ERROR]", trade.order_id, repr(exc))
+
     def settle_due_trades(self):
+        if self.execution.enabled:
+            self.reconcile_live_orders()
+            return
         now = time.time()
         remaining = []
         for trade in self.open_trades:
