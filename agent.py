@@ -144,8 +144,23 @@ class StrategyAgent:
         self.version = version
         self.mutation = mutation
 
-    def vote(self, market, fair):
+    def vote(self, market, fair, research=None):
         edge = fair - market.yes_price
+        if research is not None:
+            if self.name == "momentum":
+                edge += 0.35 * research.momentum
+            elif self.name == "mean_reversion":
+                edge += 0.35 * research.mean_reversion
+            elif self.name == "event_driven":
+                edge += 0.03 * research.news_score
+            elif self.name == "crypto_specialist":
+                edge += 0.15 * research.book_imbalance
+            elif self.name == "x_social_research":
+                # No unauthenticated X data is invented; use verified news as a proxy
+                # only when available and label it in the audit trail.
+                edge += 0.02 * research.news_score
+            elif self.name == "cross_market_arbitrage":
+                edge += 0.03 * research.cross_market_score
         if abs(edge) < 0.01:
             return 0.0
 
@@ -305,8 +320,8 @@ class TradingCompany:
         raw = ((b * p) - q) / b
         return max(0.0, min(MAX_POSITION, raw * 0.25))
 
-    def debate(self, market, fair, edge):
-        votes = {a.agent_id: a.vote(market, fair) for a in self.strategies}
+    def debate(self, market, fair, edge, research=None):
+        votes = {a.agent_id: a.vote(market, fair, research) for a in self.strategies}
         arguments = [
             agent.argument(market, fair, edge, votes)
             for agent in self.debate_agents
@@ -332,7 +347,7 @@ class TradingCompany:
             return None
 
         votes, arguments, flaws, attack_strength, debate_conf = self.debate(
-            market, fair, edge
+            market, fair, edge, research
         )
         provisional = Proposal(
             market=market,
