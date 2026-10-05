@@ -279,6 +279,11 @@ class TradingCompany:
         self.log=os.getenv(
             "TRADING_LOG_FILE", os.path.join(state_root,"paper_trades.csv")
         )
+        self.metrics_file = os.getenv(
+            "PAPER_METRICS_FILE", os.path.join(state_root, "paper_metrics.json")
+        )
+        self.paper_metrics = self._load_paper_metrics()
+
 
         strategy_names = [
             "momentum", "mean_reversion", "event_driven",
@@ -300,6 +305,56 @@ class TradingCompany:
                     "position_fraction", "stake", "pnl", "decision",
                     "failure_reason", "supporting_agents",
                 ])
+
+    def _load_paper_metrics(self):
+        default = {
+            "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0,
+            "gross_profit": 0.0, "gross_loss": 0.0, "peak_bankroll": START_BANKROLL,
+            "max_drawdown": 0.0, "last_settlement": None,
+        }
+        try:
+            with open(self.metrics_file, encoding="utf-8") as f:
+                data = json.load(f)
+            default.update(data if isinstance(data, dict) else {})
+        except Exception:
+            pass
+        return default
+
+    def _save_paper_metrics(self):
+        os.makedirs(os.path.dirname(self.metrics_file) or ".", exist_ok=True)
+        tmp = self.metrics_file + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(self.paper_metrics, f, indent=2)
+        os.replace(tmp, self.metrics_file)
+
+    def _record_paper_result(self, won, pnl):
+        m = self.paper_metrics
+        m["trades"] += 1
+        m["wins"] += int(won)
+        m["losses"] += int(not won)
+        m["pnl"] = round(float(m["pnl"]) + pnl, 8)
+        if pnl >= 0:
+            m["gross_profit"] = round(float(m["gross_profit"]) + pnl, 8)
+        else:
+            m["gross_loss"] = round(float(m["gross_loss"]) + pnl, 8)
+        m["peak_bankroll"] = max(float(m["peak_bankroll"]), self.bankroll)
+        drawdown = 1.0 - self.bankroll / max(float(m["peak_bankroll"]), 1e-9)
+        m["max_drawdown"] = max(float(m["max_drawdown"]), drawdown)
+        m["last_settlement"] = datetime.now(timezone.utc).isoformat()
+        self._save_paper_metrics()
+        win_rate = m["wins"] / m["trades"]
+        profit_factor = (
+            m["gross_profit"] / abs(m["gross_loss"])
+            if m["gross_loss"] < 0 else None
+        )
+        print(
+            "[paper metrics]",
+            "trades=%d" % m["trades"],
+            "win_rate=%.2f%%" % (win_rate * 100),
+            "pnl=%.4f" % m["pnl"],
+            "profit_factor=" + ("%.3f" % profit_factor if profit_factor is not None else "n/a"),
+            "max_drawdown=%.2f%%" % (m["max_drawdown"] * 100),
+        )
 
     def kelly(self, price, fair):
         if not 0 < price < 1:
@@ -624,6 +679,7 @@ class TradingCompany:
 
             self.bankroll += pnl
             self.peak_bankroll = max(self.peak_bankroll, self.bankroll)
+            self._record_paper_result(won, pnl)
             print("[PAPER SETTLE]", "WIN" if won else "LOSS",
                   "pnl=%.2f" % pnl, "reason=", reason)
 
