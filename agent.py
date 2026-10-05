@@ -25,6 +25,7 @@ from execution_polymarket import LiveExecutionLocked, LiveOrderRequest, Polymark
 from research_pipeline import research_market
 from post_trade import PostTradeAnalyzer
 from live_reconciliation import normalize_order, has_new_fill
+from execution_risk import ExecutionRiskGate
 
 
 SCAN_SECONDS = 300
@@ -284,6 +285,7 @@ class TradingCompany:
         self.fair = FairValueAgent()
         self.risk = RiskAgent()
         self.portfolio_risk = PortfolioRisk()
+        self.execution_risk = ExecutionRiskGate(max_position=MAX_POSITION)
         self.calibration = CalibrationTracker()
         self.lifecycle = AgentLifecycleManager()
         self.execution = PolymarketExecution()
@@ -384,6 +386,19 @@ class TradingCompany:
         price = market.yes_price if side == "BUY_YES" else 1 - market.yes_price
         fv = fair if side == "BUY_YES" else 1 - fair
         fraction = self.kelly(price, fv)
+        if research is not None:
+            gate = self.execution_risk.approve(
+                fraction,
+                self.bankroll,
+                price,
+                None,
+                research.book_depth,
+                self.daily_pnl,
+            )
+            if not gate.approved:
+                print("[execution risk]", gate.reason)
+                return None
+            fraction = gate.fraction
 
         return Proposal(
             market=market,
