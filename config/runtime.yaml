@@ -46,9 +46,10 @@ market_feed:
   endpoint: gamma_markets_keyset
   page_size: 100
   min_request_interval_seconds: 2
-  request_retries: 3
+  request_retries: 2
   backoff_base_seconds: 2
   max_retry_wait_seconds: 60
+  rate_limit_cooldown_seconds: 900
   cache_file: /data/gamma_markets_cache.json
   cache_max_age_seconds: 900
   stale_cache_is_scan_only: true

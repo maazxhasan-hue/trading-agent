@@ -29,6 +29,7 @@ S.headers.update({
 # Gamma response. The trading engine can use this as a safety gate.
 LAST_FEED_STALE = False
 LAST_FEED_STATUS = "unknown"
+GAMMA_RATE_LIMIT_UNTIL = 0.0
 
 
 def _cache_path():
@@ -41,6 +42,10 @@ def _cache_path():
 
 def _cache_max_age():
     return max(60.0, float(os.getenv("GAMMA_CACHE_MAX_AGE_SECONDS", "900")))
+
+
+def _rate_limit_cooldown():
+    return max(0.0, float(os.getenv("GAMMA_RATE_LIMIT_COOLDOWN_SECONDS", "900")))
 
 
 def feed_status():
@@ -117,15 +122,23 @@ def _save_cache(rows):
 
 
 def _request_page(params, retries=None):
+    global GAMMA_RATE_LIMIT_UNTIL
+
+    now = time.time()
+    if GAMMA_RATE_LIMIT_UNTIL > now:
+        remaining = GAMMA_RATE_LIMIT_UNTIL - now
+        print("[feed] rate-limit cooldown active; %.0fs remaining" % remaining)
+        return None, "rate_limited_cooldown"
+
     min_interval = max(
-        0.0, float(os.getenv("GAMMA_MIN_REQUEST_INTERVAL_SECONDS", "2.0"))
+        0.0, float(os.getenv("GAMMA_MIN_REQUEST_INTERVAL_SECONDS", "3.0"))
     )
     max_wait = max(
         1.0, float(os.getenv("GAMMA_MAX_RETRY_WAIT_SECONDS", "60"))
     )
     base = max(0.1, float(os.getenv("GAMMA_BACKOFF_BASE_SECONDS", "2")))
     retries = max(
-        0, int(os.getenv("GAMMA_REQUEST_RETRIES", str(retries if retries is not None else 3)))
+        0, int(os.getenv("GAMMA_REQUEST_RETRIES", str(retries if retries is not None else 2)))
     )
 
     for attempt in range(retries + 1):
@@ -146,15 +159,14 @@ def _request_page(params, retries=None):
                     if retry_after is not None
                     else min(max_wait, base * (2 ** attempt))
                 )
-                # Never hammer the upstream. Retry-After is authoritative;
-                # otherwise exponential backoff with small jitter is used.
                 wait = min(max_wait, wait) + random.uniform(0, 0.5)
 
                 if attempt >= retries:
+                    cooldown = max(_rate_limit_cooldown(), wait)
+                    GAMMA_RATE_LIMIT_UNTIL = time.time() + cooldown
                     print(
-                        "[feed] rate limited; retries exhausted",
-                        "attempt=", attempt + 1,
-                        "wait=", round(wait, 2),
+                        "[feed] rate limited; entering cooldown",
+                        "seconds=", round(cooldown, 1),
                     )
                     return None, "rate_limited"
 
@@ -178,6 +190,7 @@ def _request_page(params, retries=None):
                 continue
 
             response.raise_for_status()
+            GAMMA_RATE_LIMIT_UNTIL = 0.0
             return response.json(), "ok"
 
         except requests.RequestException as exc:
@@ -193,7 +206,6 @@ def _request_page(params, retries=None):
             return None, "invalid_json"
 
     return None, "request_error"
-
 
 def _json(x):
     if isinstance(x, str):
