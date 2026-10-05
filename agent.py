@@ -370,9 +370,16 @@ class TradingCompany:
         return max(0.0, min(MAX_POSITION, raw * 0.25))
 
     def debate(self, market, fair, edge, research=None):
+        qualified, _ = self.learning.qualified_agents(
+            [a.agent_id for a in self.strategies]
+        )
+        if len(qualified) < int(os.getenv("MIN_VALIDATED_AGENTS", "3")):
+            return None
+        qualified_ids = set(qualified)
         votes = {
             a.agent_id: a.vote(market, fair, research) * self.learning.weight(a.agent_id)
             for a in self.strategies
+            if a.agent_id in qualified_ids
         }
         arguments = [
             agent.argument(market, fair, edge, votes)
@@ -381,13 +388,13 @@ class TradingCompany:
         flaws, attack_strength = self.red_team.attack(
             market, fair, edge, arguments
         )
-        # A proposal is assembled first, then the chief is allowed to reject it.
         base_conf = min(
             0.99,
             0.50 + 0.30 * (1 - min(1, statistics.pstdev(votes.values())))
             + 0.20 * min(1, abs(statistics.mean(votes.values()))),
         )
         return votes, arguments, flaws, attack_strength, base_conf
+
 
     def evaluate(self, market, research=None):
         if research is None:
@@ -412,9 +419,20 @@ class TradingCompany:
         if abs(edge) < EDGE_MIN:
             return None
 
-        votes, arguments, flaws, attack_strength, debate_conf = self.debate(
-            market, fair, edge, research
-        )
+        debate_result = self.debate(market, fair, edge, research)
+        if debate_result is None:
+            qualified, _ = self.learning.qualified_agents(
+                [a.agent_id for a in self.strategies]
+            )
+            print(
+                "[learning gate] NO_TRADE",
+                market.market_id,
+                "qualified=%d" % len(qualified),
+                "required=%d" % int(os.getenv("MIN_VALIDATED_AGENTS", "3")),
+            )
+            return None
+        votes, arguments, flaws, attack_strength, debate_conf = debate_result
+
         provisional = Proposal(
             market=market,
             fair_value=fair,
@@ -710,16 +728,31 @@ class TradingCompany:
         print("[scan] markets:", len(markets), "target=", MAX_MARKETS, "feed_status=", feed["status"], "stale=", feed["stale"])
         price_by_id = {m.market_id: m.yes_price for m in markets}
         resolved_learning = self.learning.resolve(price_by_id.get)
-        print("[learning] resolved_forecasts=", resolved_learning,
-              "pending=", len(self.learning.data["pending"]),
-              "history=", len(self.learning.data["history"]))
+        qualified_agents, qualification_details = self.learning.qualified_agents(
+            [strategy.agent_id for strategy in self.strategies]
+        )
+        print(
+            "[learning] resolved_forecasts=", resolved_learning,
+            "pending=", len(self.learning.data["pending"]),
+            "history=", len(self.learning.data["history"]),
+            "observations=", self.learning.observation_count(),
+            "qualified=", len(qualified_agents),
+        )
         for strategy in self.strategies:
             stats = self.learning.stats(strategy.agent_id)
-            if stats["forecasts"] >= 20:
-                print("[learning]", strategy.agent_id,
-                      "forecasts=", stats["forecasts"],
-                      "accuracy=%.2f%%" % (stats["accuracy"] * 100),
-                      "weight=%.3f" % self.learning.weight(strategy.agent_id))
+            detail = qualification_details[strategy.agent_id]
+            if stats["forecasts"] or detail["qualified"]:
+                accuracy = "N/A" if stats["accuracy"] is None else "%.2f%%" % (stats["accuracy"] * 100)
+                brier = "N/A" if stats["brier"] is None else "%.4f" % stats["brier"]
+                print(
+                    "[learning]", strategy.agent_id,
+                    "forecasts=", stats["forecasts"],
+                    "accuracy=", accuracy,
+                    "brier=", brier,
+                    "qualified=", detail["qualified"],
+                    "reason=", detail["reason"],
+                    "weight=%.3f" % self.learning.weight(strategy.agent_id),
+                )
         # Never make a trading decision from a stale cached universe. The cache
         # exists to keep the scanner alive during transient upstream outages,
         # not to authorize trades on old prices.
