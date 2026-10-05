@@ -1,0 +1,44 @@
+company: trading-company
+
+required_agents:
+  orchestrator:
+    role: ceo
+  market_scanner:
+    role: broad_market_scan
+  fair_value:
+    role: fair_value
+  red_team:
+    role: adversarial_review
+  risk:
+    role: risk_manager
+  portfolio:
+    role: portfolio_manager
+  execution:
+    role: execution
+  post_trade:
+    role: post_trade_analysis
+  agent_health:
+    role: lifecycle_manager
+  treasury:
+    role: operating_budget
+  audit:
+    role: audit
+
+strategy_agents:
+  - momentum
+  - mean_reversion
+  - event_driven
+  - crypto_specialist
+  - x_social_research
+  - cross_market_arbitrage
+
+debate_agents:
+  - bull
+  - bear
+  - quant
+  - news_social
+
+replacement_policy:
+  quarantine_after_rule_violations: 2
+  calibration_floor: 0.55
+  validate_before_reactivation: true
