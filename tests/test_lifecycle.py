@@ -8,6 +8,8 @@ class LifecycleTests(unittest.TestCase):
             mgr = AgentLifecycleManager(d + "/state.json")
             a = mgr.ensure("momentum-1", "momentum")
             mgr.register_outcome([a.agent_id], False, "fair_value_error")
+            self.assertEqual(mgr.agents[a.agent_id].status, "ACTIVE")
+            mgr.register_outcome([a.agent_id], False, "fair_value_error")
             self.assertEqual(mgr.agents[a.agent_id].status, "QUARANTINED")
             child = mgr.replace_after_loss([a.agent_id], "fair_value_error", 0.72)[0]
             self.assertEqual(child.status, "ACTIVE")
