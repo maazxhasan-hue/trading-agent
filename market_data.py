@@ -96,10 +96,8 @@ def markets(max_markets=1000):
         if len(rows)<limit:break
         offset+=limit
     parsed=_parse(out)[:target]
-    if parsed:
-        _save_cache([{"id":m.id,"question":m.question,"yes_token":m.yes_token,"no_token":m.no_token,
-                     "yes_price":m.yes_price,"no_price":m.no_price,"volume":m.volume,"liquidity":m.liquidity}
-                    for m in parsed])
+    if out:
+        _save_cache(out)
     print("[feed] universe fetched:",len(parsed),"markets")
     return parsed
 
