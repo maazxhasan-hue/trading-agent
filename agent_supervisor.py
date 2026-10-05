@@ -70,6 +70,7 @@ class AgentSupervisor:
         from agent import TradingCompany
         company = TradingCompany()
         interval = int(os.getenv("SCAN_INTERVAL_SECONDS", "300"))
+        next_run = time.monotonic()
         while True:
             self.write_health()
             try:
@@ -78,7 +79,8 @@ class AgentSupervisor:
                 raise
             except Exception as exc:
                 print("[supervisor] recovered:", repr(exc))
-            time.sleep(interval)
+            next_run += interval
+            time.sleep(max(0.0, next_run - time.monotonic()))
 
 if __name__ == "__main__":
     AgentSupervisor().run()
