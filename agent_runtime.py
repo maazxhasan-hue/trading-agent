@@ -29,14 +29,19 @@ class AgentRuntimeManager:
         self.root.mkdir(parents=True, exist_ok=True)
         self.policies = policies or {}
         self._browser_sessions = {}
+        self._runtimes = {}
 
     def provision(self, agent_id):
+        if agent_id in self._runtimes:
+            return self._runtimes[agent_id]
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in agent_id)
         workspace = self.root / safe
         profile = workspace / "browser-profile"
         workspace.mkdir(parents=True, exist_ok=True)
         profile.mkdir(parents=True, exist_ok=True)
-        return AgentRuntime(agent_id, workspace, self.policies.get(agent_id, AgentRuntimePolicy()), profile)
+        runtime = AgentRuntime(agent_id, workspace, self.policies.get(agent_id, AgentRuntimePolicy()), profile)
+        self._runtimes[agent_id] = runtime
+        return runtime
 
     def browser_available(self, runtime):
         if not runtime.policy.browser_enabled:
