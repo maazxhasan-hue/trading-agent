@@ -2,8 +2,8 @@ import math, json, os
 from collections import defaultdict
 
 class CalibrationTracker:
-    def __init__(self, path="agent_calibration.json"):
-        self.path=path
+    def __init__(self, path=None):
+        self.path=path or os.getenv("AGENT_CALIBRATION_FILE", "agent_calibration.json")
         self.data=self._load()
     def _load(self):
         if not os.path.exists(self.path): return {}
