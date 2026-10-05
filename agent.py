@@ -84,47 +84,80 @@ class PolymarketPublicFeed:
     URL = "https://gamma-api.polymarket.com/markets"
 
     def fetch(self, limit=MAX_MARKETS) -> List[Market]:
-        try:
-            response = SESSION.get(
-                self.URL,
-                params={"active": "true", "closed": "false",
-                        "limit": min(limit, 1000)},
-                timeout=20,
-            )
-            response.raise_for_status()
-            rows = response.json()
-        except Exception as exc:
-            print("[feed] unavailable:", exc)
-            return []
-
+        """Fetch the full active universe using paginated Gamma API requests."""
+        target = max(1, min(int(limit), MAX_MARKETS))
+        page_size = min(500, target)
         result = []
-        for row in rows:
+        seen_ids = set()
+        offset = 0
+
+        while len(result) < target:
             try:
-                prices = row.get("outcomePrices")
-                if isinstance(prices, str):
-                    prices = json.loads(prices)
-                if not prices:
+                response = SESSION.get(
+                    self.URL,
+                    params={
+                        "active": "true",
+                        "closed": "false",
+                        "limit": page_size,
+                        "offset": offset,
+                        "order": "volume_24hr",
+                        "ascending": "false",
+                    },
+                    timeout=20,
+                )
+                response.raise_for_status()
+                rows = response.json()
+            except Exception as exc:
+                print("[feed] unavailable at offset", offset, ":", exc)
+                break
+
+            if not isinstance(rows, list) or not rows:
+                break
+
+            for row in rows:
+                try:
+                    market_id = str(row.get("id") or row.get("conditionId") or "")
+                    if not market_id or market_id in seen_ids:
+                        continue
+
+                    prices = row.get("outcomePrices")
+                    if isinstance(prices, str):
+                        prices = json.loads(prices)
+                    if not prices:
+                        continue
+
+                    p = float(prices[0])
+                    if not 0.01 < p < 0.99:
+                        continue
+
+                    token_ids = row.get("clobTokenIds") or row.get("clobTokenIDs") or []
+                    if isinstance(token_ids, str):
+                        token_ids = json.loads(token_ids)
+                    yes_token = str(token_ids[0]) if len(token_ids) > 0 else ""
+                    no_token = str(token_ids[1]) if len(token_ids) > 1 else ""
+
+                    result.append(Market(
+                        market_id,
+                        str(row.get("question") or "Unknown market"),
+                        p,
+                        float(row.get("volume") or 0),
+                        float(row.get("liquidity") or 0),
+                        yes_token,
+                        no_token,
+                    ))
+                    seen_ids.add(market_id)
+
+                    if len(result) >= target:
+                        break
+                except (TypeError, ValueError, KeyError, json.JSONDecodeError):
                     continue
-                p = float(prices[0])
-                if not 0.01 < p < 0.99:
-                    continue
-                token_ids = row.get("clobTokenIds") or row.get("clobTokenIDs") or []
-                if isinstance(token_ids, str):
-                    token_ids = json.loads(token_ids)
-                yes_token = str(token_ids[0]) if len(token_ids) > 0 else ""
-                no_token = str(token_ids[1]) if len(token_ids) > 1 else ""
-                result.append(Market(
-                    str(row.get("id") or row.get("conditionId") or ""),
-                    str(row.get("question") or "Unknown market"),
-                    p,
-                    float(row.get("volume") or 0),
-                    float(row.get("liquidity") or 0),
-                    yes_token,
-                    no_token,
-                ))
-            except (TypeError, ValueError, KeyError, json.JSONDecodeError):
-                continue
-        return result[:limit]
+
+            if len(rows) < page_size:
+                break
+            offset += page_size
+
+        print("[feed] universe fetched:", len(result), "markets")
+        return result[:target]
 
     def current_price(self, market_id):
         for market in self.fetch(MAX_MARKETS):
