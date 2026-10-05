@@ -6,4 +6,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY requirements-runtime.txt .
 RUN pip install --no-cache-dir -r requirements-runtime.txt && python -m playwright install --with-deps chromium
 COPY . .
-CMD ["python","agent.py"]
+CMD ["python","agent_supervisor.py"]
