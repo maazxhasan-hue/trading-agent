@@ -1,4 +1,5 @@
 # Deplexo free-tier deployment.
 # The free tier is too small for Chromium, so use the lightweight image.
+framework: dockerfile
 dockerfile: Dockerfile.deplexo
 port: 8080
