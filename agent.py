@@ -791,11 +791,23 @@ class TradingCompany:
             if stats["forecasts"] or detail["qualified"]:
                 accuracy = "N/A" if stats["accuracy"] is None else "%.2f%%" % (stats["accuracy"] * 100)
                 brier = "N/A" if stats["brier"] is None else "%.4f" % stats["brier"]
+                validation = detail.get("validation") or {}
+                wf_accuracy = validation.get("walk_forward_accuracy")
+                wf_brier = validation.get("walk_forward_brier")
+                wf_accuracy_text = "N/A" if wf_accuracy is None else "%.2f%%" % (wf_accuracy * 100)
+                wf_brier_text = "N/A" if wf_brier is None else "%.4f" % wf_brier
                 print(
                     "[learning]", strategy.agent_id,
                     "forecasts=", stats["forecasts"],
                     "accuracy=", accuracy,
                     "brier=", brier,
+                    "wf_windows=", validation.get("walk_forward_windows", 0),
+                    "wf_accuracy=", wf_accuracy_text,
+                    "wf_brier=", wf_brier_text,
+                    "recent_accuracy=" + (
+                        "N/A" if validation.get("recent_accuracy") is None
+                        else "%.2f%%" % (validation["recent_accuracy"] * 100)
+                    ),
                     "qualified=", detail["qualified"],
                     "reason=", detail["reason"],
                     "weight=%.3f" % self.learning.weight(strategy.agent_id),

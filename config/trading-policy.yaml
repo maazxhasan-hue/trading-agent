@@ -46,3 +46,10 @@ learning:
   min_accuracy: 0.55
   max_brier: 0.25
   min_validated_agents: 3
+  walk_forward:
+    test_size: 10
+    min_train_samples: 10
+    min_windows: 2
+    recent_samples: 10
+    min_recent_accuracy: 0.50
+    max_recent_accuracy_drop: 0.15

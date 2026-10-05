@@ -88,10 +88,45 @@ class AgentLearningTests(unittest.TestCase):
                 "brier_sum": 4.0,
                 "last_updated": 1.0,
             }
+            for i in range(30):
+                store.data["history"].append({
+                    "created_at": float(i),
+                    "resolved_at": float(i + 1),
+                    "market_id": "m" + str(i),
+                    "outcome": 1,
+                    "confidence": 0.80,
+                    "directions": {"trained-agent": 1 if i < 20 else -1},
+                })
             ok, reason, stats = store.qualification("trained-agent")
-            self.assertTrue(ok)
-            self.assertEqual(reason, "validated")
+            self.assertFalse(ok)
+            self.assertEqual(reason, "recent_performance_unstable")
             self.assertAlmostEqual(stats["accuracy"], 20 / 30)
+            self.assertEqual(stats["validation"]["walk_forward_windows"], 2)
+
+    def test_walk_forward_can_qualify_stable_agent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentLearningStore(path=tmp + "/learning.json")
+            store.data["agents"]["stable-agent"] = {
+                "forecasts": 30,
+                "correct": 30,
+                "incorrect": 0,
+                "brier_sum": 1.2,
+                "last_updated": 1.0,
+            }
+            for i in range(30):
+                store.data["history"].append({
+                    "created_at": float(i),
+                    "resolved_at": float(i + 1),
+                    "market_id": "m" + str(i),
+                    "outcome": 1,
+                    "confidence": 0.80,
+                    "directions": {"stable-agent": 1},
+                })
+            ok, reason, stats = store.qualification("stable-agent")
+            self.assertTrue(ok)
+            self.assertEqual(reason, "validated_walk_forward")
+            self.assertEqual(stats["validation"]["walk_forward_windows"], 2)
+            self.assertEqual(stats["validation"]["recent_accuracy"], 1.0)
 
     def test_qualified_agents_reports_unqualified_and_qualified(self):
         with tempfile.TemporaryDirectory() as tmp:
