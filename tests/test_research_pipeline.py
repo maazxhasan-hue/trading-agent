@@ -30,7 +30,7 @@ class ResearchPipelineTests(unittest.TestCase):
         ), patch.object(
             research_pipeline,
             "_macro_event",
-            return_value=(0.60, []),
+            return_value=(0.60, [research_pipeline.ResearchEvidence("macro", "macro", "macro", 0.8)]),
         ), patch.object(
             research_pipeline,
             "_crypto",
