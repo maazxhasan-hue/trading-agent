@@ -18,7 +18,7 @@ from typing import List
 import requests
 
 from agent_lifecycle import AgentLifecycleManager
-from market_data import price_history
+from market_data import markets as fetch_markets, price_history
 from portfolio_risk import PortfolioRisk, Position
 from calibration import CalibrationTracker
 from execution_polymarket import LiveExecutionLocked, LiveOrderRequest, PolymarketExecution
@@ -81,90 +81,26 @@ class OpenTrade:
 
 
 class PolymarketPublicFeed:
-    URL = "https://gamma-api.polymarket.com/markets"
-
     def fetch(self, limit=MAX_MARKETS) -> List[Market]:
-        """Fetch the full active universe using paginated Gamma API requests."""
-        target = max(1, min(int(limit), MAX_MARKETS))
-        page_size = min(500, target)
-        result = []
-        seen_ids = set()
-        offset = 0
-
-        while len(result) < target:
-            try:
-                response = SESSION.get(
-                    self.URL,
-                    params={
-                        "active": "true",
-                        "closed": "false",
-                        "limit": page_size,
-                        "offset": offset,
-                        "order": "volume_24hr",
-                        "ascending": "false",
-                    },
-                    timeout=20,
-                )
-                response.raise_for_status()
-                rows = response.json()
-            except Exception as exc:
-                print("[feed] unavailable at offset", offset, ":", exc)
-                break
-
-            if not isinstance(rows, list) or not rows:
-                break
-
-            for row in rows:
-                try:
-                    market_id = str(row.get("id") or row.get("conditionId") or "")
-                    if not market_id or market_id in seen_ids:
-                        continue
-
-                    prices = row.get("outcomePrices")
-                    if isinstance(prices, str):
-                        prices = json.loads(prices)
-                    if not prices:
-                        continue
-
-                    p = float(prices[0])
-                    if not 0.01 < p < 0.99:
-                        continue
-
-                    token_ids = row.get("clobTokenIds") or row.get("clobTokenIDs") or []
-                    if isinstance(token_ids, str):
-                        token_ids = json.loads(token_ids)
-                    yes_token = str(token_ids[0]) if len(token_ids) > 0 else ""
-                    no_token = str(token_ids[1]) if len(token_ids) > 1 else ""
-
-                    result.append(Market(
-                        market_id,
-                        str(row.get("question") or "Unknown market"),
-                        p,
-                        float(row.get("volume") or 0),
-                        float(row.get("liquidity") or 0),
-                        yes_token,
-                        no_token,
-                    ))
-                    seen_ids.add(market_id)
-
-                    if len(result) >= target:
-                        break
-                except (TypeError, ValueError, KeyError, json.JSONDecodeError):
-                    continue
-
-            if len(rows) < page_size:
-                break
-            offset += page_size
-
-        print("[feed] universe fetched:", len(result), "markets")
-        return result[:target]
+        raw=fetch_markets(limit)
+        return [
+            Market(
+                market_id=m.id,
+                question=m.question,
+                yes_price=m.yes_price,
+                volume=m.volume,
+                liquidity=m.liquidity,
+                yes_token_id=m.yes_token,
+                no_token_id=m.no_token,
+            )
+            for m in raw
+        ]
 
     def current_price(self, market_id):
         for market in self.fetch(MAX_MARKETS):
-            if market.market_id == market_id:
+            if market.market_id==market_id:
                 return market.yes_price
         return None
-
 
 class FairValueAgent:
     """Bounded prior used only as a candidate generator, never as truth."""
@@ -336,8 +272,13 @@ class TradingCompany:
         self.position_questions = {}
         self.daily_pnl = 0.0
         self.pnl_day_key = datetime.now(timezone.utc).date().isoformat()
-        self.post_trade = PostTradeAnalyzer(os.getenv("POST_TRADE_FILE", "agent_health.json"))
-        self.log = os.getenv("TRADING_LOG_FILE", "paper_trades.csv")
+        state_root="/data" if os.path.isdir("/data") else "."
+        self.post_trade=PostTradeAnalyzer(
+            os.getenv("POST_TRADE_FILE", os.path.join(state_root,"agent_health.json"))
+        )
+        self.log=os.getenv(
+            "TRADING_LOG_FILE", os.path.join(state_root,"paper_trades.csv")
+        )
 
         strategy_names = [
             "momentum", "mean_reversion", "event_driven",
