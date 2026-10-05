@@ -158,6 +158,77 @@ class StrategyAgent:
         return max(-1.0, min(1.0, edge / (0.10 / max(0.25, sensitivity))))
 
 
+class DebateAgent:
+    """Independent roles that argue for/against a trade before the chief decides."""
+
+    def __init__(self, role):
+        self.role = role
+
+    def argument(self, market, fair, edge, votes):
+        magnitude = abs(edge)
+        direction = "YES" if edge > 0 else "NO"
+        if self.role == "bull":
+            return {
+                "stance": "BUY_" + direction,
+                "argument": f"fair value implies {magnitude:.1%} edge; bullish thesis survives if the estimate is valid",
+                "strength": min(1.0, magnitude / 0.12),
+            }
+        if self.role == "bear":
+            return {
+                "stance": "CHALLENGE",
+                "argument": "market price may already incorporate information; demand independent evidence before trading",
+                "strength": min(1.0, 0.55 + magnitude),
+            }
+        if self.role == "quant":
+            agreement = statistics.mean(votes.values()) if votes else 0.0
+            return {
+                "stance": "BUY_" + direction if agreement * edge > 0 else "CHALLENGE",
+                "argument": f"strategy vote mean={agreement:.3f}; edge={edge:.3f}",
+                "strength": min(1.0, 0.5 + abs(agreement) * 0.5),
+            }
+        return {
+            "stance": "CHALLENGE" if market.liquidity <= 0 else "CONDITIONAL",
+            "argument": f"news/social evidence is not directly verified by the local feed; liquidity={market.liquidity:.2f}",
+            "strength": 0.60,
+        }
+
+
+class RedTeamAgent:
+    def attack(self, market, fair, edge, arguments):
+        flaws = []
+        if market.liquidity <= 0:
+            flaws.append("no_liquidity")
+        if abs(edge) < EDGE_MIN:
+            flaws.append("edge_below_threshold")
+        if len(arguments) < 3:
+            flaws.append("insufficient_independent_debate")
+        # The current public-feed engine cannot independently verify social/news
+        # claims, so red-team explicitly discounts those claims rather than inventing evidence.
+        flaws.append("external_evidence_unverified")
+        attack_strength = min(0.95, 0.35 + 0.12 * len(flaws))
+        return flaws, attack_strength
+
+
+class ChiefDecisionAgent:
+    def decide(self, proposal, arguments, flaws, attack_strength):
+        votes = proposal.votes
+        positive = sum(1 for v in votes.values() if v * proposal.edge > 0)
+        total = max(1, len(votes))
+        agreement = positive / total
+        fatal = {"no_liquidity", "edge_below_threshold"}
+        veto = bool(fatal.intersection(flaws))
+        # A red-team objection alone does not force a veto; the chief requires a
+        # material, testable flaw. Unverified external claims reduce confidence.
+        confidence = proposal.confidence * (1.0 - 0.20 * min(1.0, attack_strength))
+        if "external_evidence_unverified" in flaws:
+            confidence *= 0.90
+        if veto or agreement < 0.50:
+            return "NO_TRADE", confidence, "red-team veto or insufficient agreement"
+        if confidence < CONFIDENCE_MIN:
+            return "NO_TRADE", confidence, "debate confidence below threshold"
+        return proposal.side, confidence, "chief accepted thesis after cross-examination"
+
+
 class RiskAgent:
     def approve(self, proposal, bankroll):
         return (
@@ -215,15 +286,22 @@ class TradingCompany:
         raw = ((b * p) - q) / b
         return max(0.0, min(MAX_POSITION, raw * 0.25))
 
-    def debate(self, market, fair):
+    def debate(self, market, fair, edge):
         votes = {a.agent_id: a.vote(market, fair) for a in self.strategies}
-        active_votes = list(votes.values())
-        avg = statistics.mean(active_votes)
-        spread = statistics.pstdev(active_votes) if len(active_votes) > 1 else 0
-        agreement = 1 - min(1, spread)
-        confidence = min(0.99, 0.50 + 0.30 * agreement
-                         + 0.20 * min(1, abs(avg)))
-        return votes, confidence
+        arguments = [
+            agent.argument(market, fair, edge, votes)
+            for agent in self.debate_agents
+        ]
+        flaws, attack_strength = self.red_team.attack(
+            market, fair, edge, arguments
+        )
+        # A proposal is assembled first, then the chief is allowed to reject it.
+        base_conf = min(
+            0.99,
+            0.50 + 0.30 * (1 - min(1, statistics.pstdev(votes.values())))
+            + 0.20 * min(1, abs(statistics.mean(votes.values()))),
+        )
+        return votes, arguments, flaws, attack_strength, base_conf
 
     def evaluate(self, market):
         fair, base_conf = self.fair.estimate(market)
@@ -231,9 +309,26 @@ class TradingCompany:
         if abs(edge) < EDGE_MIN:
             return None
 
-        votes, debate_conf = self.debate(market, fair)
-        confidence = min(base_conf, debate_conf)
-        side = "BUY_YES" if edge > 0 else "BUY_NO"
+        votes, arguments, flaws, attack_strength, debate_conf = self.debate(
+            market, fair, edge
+        )
+        provisional = Proposal(
+            market=market,
+            fair_value=fair,
+            edge=edge,
+            confidence=min(base_conf, debate_conf),
+            side="BUY_YES" if edge > 0 else "BUY_NO",
+            position_fraction=0.0,
+            votes=votes,
+            reason="",
+            supporting_agents=list(votes.keys()),
+        )
+        final_side, confidence, reason = self.chief.decide(
+            provisional, arguments, flaws, attack_strength
+        )
+        if final_side == "NO_TRADE":
+            return None
+        side = final_side
         price = market.yes_price if side == "BUY_YES" else 1 - market.yes_price
         fv = fair if side == "BUY_YES" else 1 - fair
         fraction = self.kelly(price, fv)
@@ -246,7 +341,7 @@ class TradingCompany:
             side=side,
             position_fraction=fraction,
             votes=votes,
-            reason="multi-agent adaptive paper decision",
+            reason=reason + " | objections=" + ",".join(flaws),
             supporting_agents=list(votes.keys()),
         )
 
@@ -270,7 +365,8 @@ class TradingCompany:
         print("[PAPER OPEN]", proposal.side,
               "edge=%.2f%%" % (proposal.edge * 100),
               "confidence=%.2f%%" % (proposal.confidence * 100),
-              "stake=%.2f" % stake)
+              "stake=%.2f" % stake,
+              "reason=", proposal.reason)
 
     def diagnose(self, trade, settle_price):
         p = trade.proposal
