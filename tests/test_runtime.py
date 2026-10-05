@@ -11,6 +11,10 @@ class RuntimeTests(unittest.TestCase):
             self.assertNotEqual(a.workspace,b.workspace)
             self.assertNotEqual(a.browser_profile,b.browser_profile)
             self.assertTrue(a.browser_profile.exists())
+            self.assertEqual(a, m.provision("momentum"))
+            status = m.capability_status(a)
+            self.assertTrue(status["browser_enabled"])
+            self.assertTrue(status["terminal_enabled"])
 
     def test_compound_commands_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
