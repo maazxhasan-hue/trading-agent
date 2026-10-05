@@ -1,4 +1,7 @@
 mode: paper
+live_execution: false
+live_execution_requires_arm: true
+max_live_order_fraction: 0.06
 scan_interval_seconds: 300
 max_markets_per_scan: 1000
 edge_min_pct: 8.0
