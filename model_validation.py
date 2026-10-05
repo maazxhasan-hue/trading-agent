@@ -7,6 +7,7 @@ the trading decision stage.
 """
 from dataclasses import dataclass
 import math
+import os
 import statistics
 
 from fair_value import FairValueModel
@@ -27,12 +28,17 @@ def _clamp(x, lo=0.001, hi=0.999):
 
 def validate_fair_value_history(
     prices,
-    min_samples=30,
-    min_accuracy=0.55,
-    max_brier=0.25,
-    min_move=0.005,
-    lookback=60,
+    min_samples=None,
+    min_accuracy=None,
+    max_brier=None,
+    min_move=None,
+    lookback=None,
 ):
+    min_samples = int(os.getenv("VALIDATION_MIN_SAMPLES", "30")) if min_samples is None else int(min_samples)
+    min_accuracy = float(os.getenv("VALIDATION_MIN_ACCURACY", "0.55")) if min_accuracy is None else float(min_accuracy)
+    max_brier = float(os.getenv("VALIDATION_MAX_BRIER", "0.25")) if max_brier is None else float(max_brier)
+    min_move = float(os.getenv("VALIDATION_MIN_MOVE", "0.005")) if min_move is None else float(min_move)
+    lookback = int(os.getenv("VALIDATION_LOOKBACK", "60")) if lookback is None else int(lookback)
     clean = []
     for value in prices or []:
         try:
