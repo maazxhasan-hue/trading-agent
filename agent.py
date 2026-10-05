@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List
 import requests
-from market_data import markets, price_history
+from market_data import markets, price_history\nfrom portfolio_risk import PortfolioRisk, Position\nfrom calibration import CalibrationTracker
 
 SCAN_SECONDS = 300
 MAX_MARKETS = 1000
@@ -102,7 +102,7 @@ class TradingCompany:
         self.strategies = [StrategyAgent(x) for x in [
             "momentum","mean_reversion","event_driven","crypto_specialist","x_social_research"
         ]]
-        self.risk = RiskAgent()
+        self.risk = RiskAgent()\n        self.portfolio_risk = PortfolioRisk()\n        self.calibration = CalibrationTracker()\n        self.positions = []\n        self.daily_pnl = 0.0
         self.log = "paper_trades.csv"
         if not os.path.exists(self.log):
             with open(self.log,"w",newline="",encoding="utf-8") as f:
@@ -164,7 +164,7 @@ class TradingCompany:
         candidates.sort(key=lambda p:abs(p.edge)*p.confidence,reverse=True)
         print("[decision] passing all gates:",len(candidates))
         if candidates:
-            self.paper_order(candidates[0])
+            p=candidates[0]\n            self.paper_order(p)\n            self.positions.append(Position(p.market.market_id,p.position_fraction,p.side,p.confidence))
         else:
             print("[decision] no trade")
 
