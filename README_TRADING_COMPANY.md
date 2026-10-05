@@ -10,6 +10,7 @@ SCAN -> RESEARCH -> FAIR VALUE -> DEBATE -> RED TEAM -> PORTFOLIO RISK -> EXECUT
 
 - Paper mode is the default.
 - Live orders require explicit environment arming and protected credentials.
+- Live orders are **cloud-only**: local/laptop runtimes are blocked by `runtime_guard.py`.
 - Research must pass freshness/provenance gates before a trade can be proposed.
 - Position size is capped at 6% of bankroll and fractional Kelly is used.
 - Portfolio exposure and correlated exposure are capped.
@@ -39,20 +40,32 @@ Use conservative fractional Kelly and cap each position at 6% of bankroll. Addit
 
 The execution gate requires >= 80% model confidence, but this is not a guarantee of winning. Calibration must be measured over time.
 
-## Cloud runtime
+## Cloud runtime / laptop-off operation
 
-The supervisor supports persistent agent workspaces, isolated browser profiles and isolated terminal workspaces. The full Docker image includes Playwright/Chromium; the lightweight Deplexo image intentionally omits Chromium and should remain paper-only unless the deployment is upgraded.
+The trading process is designed to run independently in the cloud. Once the cloud supervisor is running with persistent storage and restart-on-failure, the laptop can be powered off and the scan/research/execution/reconciliation loop continues.
 
-## Deployment
+The production image is `Dockerfile.production`. The Deplexo free-tier image remains a lightweight paper-validation deployment and is not the target for live capital.
 
-deplexo.yaml uses the lightweight Dockerfile.deplexo image on port 8080. Configure the environment variables in the Deplexo dashboard and attach persistent storage at /data when available.
+## Live runtime locks
+
+Live execution requires all of the following:
+
+1. `LIVE_TRADING=true`
+2. `LIVE_TRADING_ARM=I_UNDERSTAND_LIVE_TRADING`
+3. `CLOUD_RUNTIME=true`
+4. `LIVE_RUNTIME_APPROVED=true`
+5. Protected Polymarket credentials available only as cloud runtime secrets.
+
+The repository defaults all live switches to off. The live runtime must be explicitly approved only after production readiness checks.
 
 ## Validation before live trading
 
 1. CI tests and compile checks pass.
 2. Paper trading runs for a meaningful sample.
 3. Calibration, drawdown, slippage and execution behavior are reviewed.
-4. Live execution remains disabled until an explicit manual go/no-go decision.
+4. Production cloud persistence/restarts are verified.
+5. Wallet/balance and order reconciliation are verified.
+6. Live execution remains disabled until an explicit manual go/no-go decision.
 
 No system in this repository guarantees profit. Paper performance is not proof of future results.
 
