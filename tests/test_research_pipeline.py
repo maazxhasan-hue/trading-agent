@@ -22,7 +22,7 @@ class ResearchPipelineTests(unittest.TestCase):
         ), patch.object(
             research_pipeline,
             "_book",
-            return_value=(0.10, 100.0, 0.0),
+            return_value=(0.10, 100.0, 0.0, 0.41, 0.45),
         ), patch.object(
             research_pipeline,
             "_news",
@@ -59,7 +59,7 @@ class ResearchPipelineTests(unittest.TestCase):
         ), patch.object(
             research_pipeline,
             "_book",
-            return_value=(0.10, 100.0, 0.0),
+            return_value=(0.10, 100.0, 0.0, 0.41, 0.45),
         ), patch.object(
             research_pipeline,
             "_news",
@@ -88,7 +88,7 @@ class ResearchPipelineTests(unittest.TestCase):
     def test_incomplete_required_source_blocks_research(self):
         market = FakeMarket("1", "Will bitcoin rise tomorrow?", 0.55)
         with patch.object(research_pipeline, "price_history", return_value=[]), \
-             patch.object(research_pipeline, "_book", return_value=(0.10, 100.0, 0.0)), \
+             patch.object(research_pipeline, "_book", return_value=(0.10, 100.0, 0.0, 0.41, 0.45)), \
              patch.object(research_pipeline, "_news", return_value=(0.70, [])), \
              patch.object(research_pipeline, "_macro_event", return_value=(0.60, [])), \
              patch.object(research_pipeline, "_crypto", return_value=(0.20, "ok")), \
@@ -100,3 +100,6 @@ class ResearchPipelineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    # Order-book tuple compatibility is intentionally tested through research_market.
