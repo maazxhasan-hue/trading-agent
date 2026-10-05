@@ -69,7 +69,7 @@ def _book(token_id):
     if not token_id:
         return 0.0, 0.0, 0.0
     try:
-        r = SESSION.get(CLOB_BOOK, params={"token_id": token_id}, timeout=8)
+        r = SESSION.get(CLOB_BOOK, params={"token_id": token_id}, timeout=5)
         r.raise_for_status()
         data = r.json()
         bids = data.get("bids") or []
