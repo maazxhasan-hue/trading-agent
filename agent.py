@@ -29,7 +29,7 @@ from execution_risk import ExecutionRiskGate
 
 
 SCAN_SECONDS = 300
-MAX_MARKETS = 1000
+MAX_MARKETS = max(1, min(int(os.getenv("MAX_MARKETS_PER_SCAN", "1000")), 1000))
 EDGE_MIN = 0.08
 CONFIDENCE_MIN = 0.80
 MAX_POSITION = 0.06
@@ -636,7 +636,7 @@ class TradingCompany:
 
         markets = self.feed.fetch(MAX_MARKETS)
         feed = feed_status()
-        print("[scan] markets:", len(markets), "feed_status=", feed["status"], "stale=", feed["stale"])
+        print("[scan] markets:", len(markets), "target=", MAX_MARKETS, "feed_status=", feed["status"], "stale=", feed["stale"])
         # Never make a trading decision from a stale cached universe. The cache
         # exists to keep the scanner alive during transient upstream outages,
         # not to authorize trades on old prices.
