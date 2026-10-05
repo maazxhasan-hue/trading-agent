@@ -10,6 +10,13 @@ ENV AGENT_WORKSPACE_ROOT=/data/agent_workspaces
 ENV AGENT_HEALTH_FILE=/data/logs/agent_runtime_health.json
 ENV AGENT_LIFECYCLE_FILE=/data/agent_lifecycle.json
 ENV AGENT_CALIBRATION_FILE=/data/agent_calibration.json
+ENV AGENT_LEARNING_FILE=/data/agent_learning.json
+ENV LEARNING_HORIZON_SECONDS=300
+ENV LEARNING_MIN_MOVE=0.005
+ENV LEARNING_MIN_SAMPLES=30
+ENV LEARNING_MIN_ACCURACY=0.55
+ENV LEARNING_MAX_BRIER=0.25
+ENV MIN_VALIDATED_AGENTS=3
 ENV POST_TRADE_FILE=/data/agent_health.json
 ENV TRADING_LOG_FILE=/data/paper_trades.csv
 CMD ["python","agent_supervisor.py"]
