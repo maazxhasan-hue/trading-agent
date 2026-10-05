@@ -28,6 +28,7 @@ from live_reconciliation import normalize_order, has_new_fill
 from execution_risk import ExecutionRiskGate
 from agent_learning import AgentLearningStore
 from live_portfolio import LivePortfolioLedger
+from balance_reconciliation import collateral_sufficient, extract_available_collateral
 
 
 SCAN_SECONDS = 300
@@ -268,6 +269,7 @@ class TradingCompany:
         self.lifecycle = AgentLifecycleManager()
         self.execution = PolymarketExecution()
         self.live_ledger = LivePortfolioLedger()
+        self.live_available_collateral = None
         self.debate_agents = [DebateAgent("bull"), DebateAgent("bear"),
                               DebateAgent("quant"), DebateAgent("news_social")]
         self.red_team = RedTeamAgent()
@@ -509,6 +511,19 @@ class TradingCompany:
 
     def paper_order(self, proposal):
         stake = self.bankroll * proposal.position_fraction
+        if self.execution.enabled:
+            balance_payload = self.execution.get_balance_allowance()
+            available = extract_available_collateral(balance_payload)
+            self.live_available_collateral = available
+            reserve = float(os.getenv("LIVE_COLLATERAL_RESERVE_FRACTION", "0.10"))
+            if not collateral_sufficient(available, stake, reserve):
+                print(
+                    "[live collateral gate] NO_TRADE",
+                    "available=" + ("unknown" if available is None else "%.6f" % available),
+                    "required=%.6f" % stake,
+                    "reserve=%.2f%%" % (reserve * 100),
+                )
+                return None
         token_id = (
             proposal.market.yes_token_id
             if proposal.side == "BUY_YES"
