@@ -746,7 +746,10 @@ class TradingCompany:
         research_by_id = {}
         for market in research_targets:
             try:
-                snapshot = research_market(market, markets)
+                snapshot = research_market(
+                    market, markets,
+                    validation_history=self.learning.history_for_market(market.market_id),
+                )
                 research_by_id[market.market_id] = snapshot
                 # Learn from the forecast even when validation blocks trading.
                 # This is an observation loop, not a trade authorization path.
