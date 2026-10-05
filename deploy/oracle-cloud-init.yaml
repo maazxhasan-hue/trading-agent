@@ -1,0 +1,16 @@
+#cloud-config
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+
+runcmd:
+  - [bash, -lc, "curl -fsSL https://get.docker.com | sh"]
+  - [bash, -lc, "systemctl enable --now docker"]
+  - [bash, -lc, "mkdir -p /opt/trading-agent"]
+  - [bash, -lc, "chown ubuntu:ubuntu /opt/trading-agent"]
+  - [bash, -lc, "git clone https://github.com/maazxhasan-hue/trading-agent.git /opt/trading-agent"]
+  - [bash, -lc, "cd /opt/trading-agent && cp .env.example .env && chmod 600 .env"]
+  - [bash, -lc, "cd /opt/trading-agent && docker compose build"]
+  - [bash, -lc, "cd /opt/trading-agent && docker compose up -d"]
