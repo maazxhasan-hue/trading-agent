@@ -25,6 +25,17 @@ class AgentLearningTests(unittest.TestCase):
             store = AgentLearningStore(path=tmp + "/learning.json", horizon_seconds=0)
             self.assertEqual(store.weight("new-agent"), 1.0)
 
+    def test_weight_changes_after_enough_observations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentLearningStore(path=tmp + "/learning.json", horizon_seconds=0)
+            for i in range(20):
+                store.record_forecast(
+                    "m" + str(i), "test", 0.50,
+                    {"momentum-v1": 1.0}, 0.80, 0.10, now=float(i)
+                )
+            store.resolve(lambda market_id: 0.60, now=100.0)
+            self.assertGreater(store.weight("momentum-v1"), 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
