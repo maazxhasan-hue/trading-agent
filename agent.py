@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List
 import requests
+from market_data import markets, price_history
 
 SCAN_SECONDS = 300
 MAX_MARKETS = 1000
