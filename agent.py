@@ -70,17 +70,18 @@ class PolymarketPublicFeed:
 class FairValueAgent:
     def estimate(self, m):
         p = m.yes_price
-        # Conservative baseline: do not invent a large edge from price alone.
-        liquidity_factor = min(0.02, math.log1p(max(m.liquidity,0)) / 10000)
-        fair = max(0.01, min(0.99, p + (0.5-p)*liquidity_factor))
-        return fair, 0.55
+        # Explicit bounded mean-reversion prior. This is a heuristic, not truth.
+        # It can generate candidates, but every candidate still needs debate/risk gates.
+        fair = max(0.01, min(0.99, 0.5 + 0.70 * (p - 0.5)))
+        confidence = 0.80 if abs(p - 0.5) >= 0.20 else 0.74
+        return fair, confidence
 
 class StrategyAgent:
     def __init__(self, name): self.name = name
     def vote(self, m, fair):
         edge = fair - m.yes_price
         if abs(edge) < 0.01: return 0.0
-        return max(-1.0, min(1.0, edge/0.10))
+        return max(-1.0, min(1.0, edge / 0.10))
 
 class RiskAgent:
     def approve(self, p, bankroll):
