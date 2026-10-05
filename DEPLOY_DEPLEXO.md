@@ -21,6 +21,9 @@ This repository uses a lightweight Docker image for Deplexo's constrained free r
    `AGENT_LIFECYCLE_FILE=/data/agent_lifecycle.json`
    `AGENT_CALIBRATION_FILE=/data/agent_calibration.json`
    `TRADING_LOG_FILE=/data/paper_trades.csv`
+   `TRADING_KILL_SWITCH=false`
+   `MAX_EXECUTION_SLIPPAGE=0.02`
+   `MIN_BOOK_DEPTH_MULTIPLE=2.0`
 6. Attach the persistent data volume at `/data` if available.
 7. Confirm the health URL returns HTTP 200.
 
