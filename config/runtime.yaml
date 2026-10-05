@@ -1,0 +1,10 @@
+mode: paper
+scan_interval_seconds: 300
+max_markets_per_scan: 1000
+edge_min_pct: 8.0
+confidence_min: 0.80
+max_position_fraction: 0.06
+kelly_fraction: 0.25
+live_orders: false
+revenge_trading: false
+averaging_down: false
