@@ -410,8 +410,14 @@ class TradingCompany:
                     market.market_id,
                     "reason=" + research.validation_reason,
                     "samples=" + str(research.validation_samples),
-                    "accuracy=%.2f%%" % (research.validation_accuracy * 100),
-                    "brier=%.4f" % research.validation_brier,
+                    "accuracy=" + (
+                        ("%.2f%%" % (research.validation_accuracy * 100))
+                        if research.validation_samples else "N/A"
+                    ),
+                    "brier=" + (
+                        ("%.4f" % research.validation_brier)
+                        if research.validation_samples else "N/A"
+                    ),
                 )
                 return None
             fair, base_conf = research.fair_value, research.confidence
