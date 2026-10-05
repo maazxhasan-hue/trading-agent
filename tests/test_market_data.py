@@ -36,6 +36,41 @@ class MarketFeedTests(unittest.TestCase):
                 market_data._cache_path, market_data._cache_max_age = old_path, old_age
                 market_data.LAST_FEED_STALE, market_data.LAST_FEED_STATUS = old_stale, old_status
 
+    def test_rate_limit_enters_cooldown_after_retries(self):
+        class FakeResponse:
+            status_code = 429
+            headers = {}
+            def raise_for_status(self):
+                raise RuntimeError("429")
+        calls = []
+        old_until = market_data.GAMMA_RATE_LIMIT_UNTIL
+        try:
+            with patch.dict(
+                "os.environ",
+                {
+                    "GAMMA_REQUEST_RETRIES": "1",
+                    "GAMMA_MIN_REQUEST_INTERVAL_SECONDS": "0",
+                    "GAMMA_BACKOFF_BASE_SECONDS": "0.01",
+                    "GAMMA_MAX_RETRY_WAIT_SECONDS": "0.01",
+                    "GAMMA_RATE_LIMIT_COOLDOWN_SECONDS": "60",
+                },
+                clear=False,
+            ), patch.object(
+                market_data.S,
+                "get",
+                side_effect=lambda *args, **kwargs: calls.append(1) or FakeResponse(),
+            ), patch.object(market_data.time, "sleep"):
+                payload, status = market_data._request_page({"limit": 1})
+                self.assertIsNone(payload)
+                self.assertEqual(status, "rate_limited")
+                self.assertEqual(len(calls), 2)
+                payload, status = market_data._request_page({"limit": 1})
+                self.assertIsNone(payload)
+                self.assertEqual(status, "rate_limited_cooldown")
+                self.assertEqual(len(calls), 2)
+        finally:
+            market_data.GAMMA_RATE_LIMIT_UNTIL = old_until
+
     def test_keyset_cursor_paginates(self):
         pages = [
             ({"markets":[{"id":"1","question":"a","outcomePrices":"[0.6,0.4]","clobTokenIds":"[\"y\",\"n\"]","volume":1,"liquidity":1}],"next_cursor":"c1"}, "ok"),
