@@ -30,3 +30,11 @@ subscription_spend_from_trading_capital: false
 max_execution_slippage: 0.02
 min_book_depth_multiple: 2.0
 kill_switch: false
+
+validation:
+  min_samples: 30
+  min_accuracy: 0.55
+  max_brier: 0.25
+  min_move: 0.005
+  lookback: 60
+  required_before_trade: true
