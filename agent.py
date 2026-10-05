@@ -608,7 +608,11 @@ class TradingCompany:
                       "confidence=%.2f%%" % (snapshot.confidence * 100),
                       "book=%.2f" % snapshot.book_imbalance,
                       "news=%d" % snapshot.news_count,
-                      "cross=%.2f" % snapshot.cross_market_score)
+                      "macro=%.2f" % snapshot.macro_score,
+                      "crypto=%.2f" % snapshot.crypto_score,
+                      "social=%.2f" % snapshot.social_score,
+                      "cross=%.2f" % snapshot.cross_market_score,
+                      "sources=" + ",".join(k for k,v in snapshot.source_status.items() if v))
             except Exception as exc:
                 print("[research] recovered:", repr(exc))
 
