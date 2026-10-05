@@ -22,3 +22,10 @@ Backtest:
 python walk_forward.py history.csv
 
 Default execution remains paper-only. No private credentials belong in GitHub. Past performance is not a guarantee of future returns.
+
+
+## Polymarket live execution
+
+The repository includes a locked CLOB execution adapter in `execution_polymarket.py`. It uses the current Polymarket CLOB client interface and supports authenticated limit orders. Live execution is disabled by default. Runtime secrets must be supplied through environment variables, never committed to GitHub.
+
+Required runtime variables when deliberately enabling live execution: `LIVE_TRADING=true`, `LIVE_TRADING_ARM=I_UNDERSTAND_LIVE_TRADING`, `PK`, `CLOB_API_KEY`, `CLOB_SECRET`, and `CLOB_PASS_PHRASE`. The engine still applies its position/risk gates before reaching the execution adapter.
