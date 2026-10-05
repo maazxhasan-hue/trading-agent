@@ -37,6 +37,46 @@ class AgentLearningTests(unittest.TestCase):
             store._save()
             self.assertEqual(store.history_for_market("m1"), [0.50, 0.51, 0.52])
 
+    def test_qualification_requires_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentLearningStore(path=tmp + "/learning.json")
+            ok, reason, stats = store.qualification("new-agent")
+            self.assertFalse(ok)
+            self.assertEqual(reason, "insufficient_samples")
+            self.assertEqual(stats["forecasts"], 0)
+
+            store.data["agents"]["trained-agent"] = {
+                "forecasts": 20,
+                "correct": 15,
+                "incorrect": 5,
+                "brier_sum": 4.0,
+                "last_updated": 1.0,
+            }
+            ok, reason, stats = store.qualification("trained-agent")
+            self.assertTrue(ok)
+            self.assertEqual(reason, "validated")
+            self.assertEqual(stats["accuracy"], 0.75)
+
+    def test_qualified_agents_reports_unqualified_and_qualified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentLearningStore(path=tmp + "/learning.json")
+            store.data["agents"]["good"] = {
+                "forecasts": 20, "correct": 15, "incorrect": 5,
+                "brier_sum": 4.0, "last_updated": 1.0,
+            }
+            qualified, details = store.qualified_agents(["good", "new"])
+            self.assertEqual(qualified, ["good"])
+            self.assertTrue(details["good"]["qualified"])
+            self.assertEqual(details["new"]["reason"], "insufficient_samples")
+
+    def test_observation_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentLearningStore(path=tmp + "/learning.json")
+            store.record_observation("m1", 0.50, save=False)
+            store.record_observation("m1", 0.51, save=False)
+            store.record_observation("m2", 0.40, save=False)
+            self.assertEqual(store.observation_count(), 3)
+
     def test_weight_waits_for_sample_floor(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = AgentLearningStore(path=tmp + "/learning.json", horizon_seconds=0)
