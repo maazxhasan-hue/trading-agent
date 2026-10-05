@@ -38,3 +38,11 @@ validation:
   min_move: 0.005
   lookback: 60
   required_before_trade: true
+
+learning:
+  horizon_seconds: 300
+  min_move: 0.005
+  min_samples: 30
+  min_accuracy: 0.55
+  max_brier: 0.25
+  min_validated_agents: 3
