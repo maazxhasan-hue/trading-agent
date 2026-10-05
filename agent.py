@@ -26,6 +26,7 @@ from research_pipeline import research_market
 from post_trade import PostTradeAnalyzer
 from live_reconciliation import normalize_order, has_new_fill
 from execution_risk import ExecutionRiskGate
+from agent_learning import AgentLearningStore
 
 
 SCAN_SECONDS = 300
@@ -261,6 +262,7 @@ class TradingCompany:
             kill_switch=os.getenv("TRADING_KILL_SWITCH", "false").lower() == "true",
         )
         self.calibration = CalibrationTracker()
+        self.learning = AgentLearningStore()
         self.lifecycle = AgentLifecycleManager()
         self.execution = PolymarketExecution()
         self.debate_agents = [DebateAgent("bull"), DebateAgent("bear"),
@@ -368,7 +370,10 @@ class TradingCompany:
         return max(0.0, min(MAX_POSITION, raw * 0.25))
 
     def debate(self, market, fair, edge, research=None):
-        votes = {a.agent_id: a.vote(market, fair, research) for a in self.strategies}
+        votes = {
+            a.agent_id: a.vote(market, fair, research) * self.learning.weight(a.agent_id)
+            for a in self.strategies
+        }
         arguments = [
             agent.argument(market, fair, edge, votes)
             for agent in self.debate_agents
@@ -703,6 +708,18 @@ class TradingCompany:
         markets = self.feed.fetch(MAX_MARKETS)
         feed = feed_status()
         print("[scan] markets:", len(markets), "target=", MAX_MARKETS, "feed_status=", feed["status"], "stale=", feed["stale"])
+        price_by_id = {m.market_id: m.yes_price for m in markets}
+        resolved_learning = self.learning.resolve(price_by_id.get)
+        print("[learning] resolved_forecasts=", resolved_learning,
+              "pending=", len(self.learning.data["pending"]),
+              "history=", len(self.learning.data["history"]))
+        for strategy in self.strategies:
+            stats = self.learning.stats(strategy.agent_id)
+            if stats["forecasts"] >= 20:
+                print("[learning]", strategy.agent_id,
+                      "forecasts=", stats["forecasts"],
+                      "accuracy=%.2f%%" % (stats["accuracy"] * 100),
+                      "weight=%.3f" % self.learning.weight(strategy.agent_id))
         # Never make a trading decision from a stale cached universe. The cache
         # exists to keep the scanner alive during transient upstream outages,
         # not to authorize trades on old prices.
@@ -727,6 +744,22 @@ class TradingCompany:
             try:
                 snapshot = research_market(market, markets)
                 research_by_id[market.market_id] = snapshot
+                # Learn from the forecast even when validation blocks trading.
+                # This is an observation loop, not a trade authorization path.
+                learning_votes, _, _, _, _ = self.debate(
+                    market,
+                    snapshot.fair_value,
+                    snapshot.fair_value - market.yes_price,
+                    snapshot,
+                )
+                self.learning.record_forecast(
+                    market.market_id,
+                    market.question,
+                    market.yes_price,
+                    learning_votes,
+                    snapshot.confidence,
+                    snapshot.fair_value - market.yes_price,
+                )
                 print("[research]", market.market_id,
                       "edge=%.2f%%" % ((snapshot.fair_value - market.yes_price) * 100),
                       "confidence=%.2f%%" % (snapshot.confidence * 100),
