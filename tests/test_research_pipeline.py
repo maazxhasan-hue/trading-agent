@@ -62,6 +62,18 @@ class ResearchPipelineTests(unittest.TestCase):
             research_pipeline,
             "_news",
             return_value=(0.70, []),
+        ), patch.object(
+            research_pipeline,
+            "_macro_event",
+            return_value=(0.60, []),
+        ), patch.object(
+            research_pipeline,
+            "_crypto",
+            return_value=(0.20, "ok"),
+        ), patch.object(
+            research_pipeline,
+            "_social",
+            return_value=(0.0, "unavailable_no_token"),
         ):
             snapshot = research_pipeline.research_market(market, [market, peer])
 
