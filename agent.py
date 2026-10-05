@@ -27,6 +27,7 @@ from post_trade import PostTradeAnalyzer
 from live_reconciliation import normalize_order, has_new_fill
 from execution_risk import ExecutionRiskGate
 from agent_learning import AgentLearningStore
+from live_portfolio import LivePortfolioLedger
 
 
 SCAN_SECONDS = 300
@@ -266,6 +267,7 @@ class TradingCompany:
         self.learning = AgentLearningStore()
         self.lifecycle = AgentLifecycleManager()
         self.execution = PolymarketExecution()
+        self.live_ledger = LivePortfolioLedger()
         self.debate_agents = [DebateAgent("bull"), DebateAgent("bear"),
                               DebateAgent("quant"), DebateAgent("news_social")]
         self.red_team = RedTeamAgent()
@@ -535,6 +537,15 @@ class TradingCompany:
             if not order_id:
                 raise LiveExecutionLocked("Execution response contained no order id.")
             print("[LIVE ORDER SUBMITTED]", order_id)
+            self.live_ledger.record_order(
+                order_id,
+                proposal.market.market_id,
+                proposal.market.question,
+                proposal.side,
+                token_id,
+                size,
+                "SUBMITTED",
+            )
             decision_label = "LIVE_ORDER_SUBMITTED"
         else:
             decision_label = "PAPER_ORDER"
@@ -644,13 +655,30 @@ class TradingCompany:
                     trade.matched_size = fill.matched_size
                     if fill.average_price is not None:
                         trade.average_fill_price = fill.average_price
-                    price = trade.average_fill_price or (
-                        trade.proposal.market.yes_price
-                        if trade.proposal.side == "BUY_YES"
-                        else 1 - trade.proposal.market.yes_price
-                    )
-                    trade.stake = trade.matched_size * price
+                fallback_price = (
+                    trade.proposal.market.yes_price
+                    if trade.proposal.side == "BUY_YES"
+                    else 1 - trade.proposal.market.yes_price
+                )
+                effective_fill_price = trade.average_fill_price or fallback_price
+                trade.stake = trade.matched_size * effective_fill_price
                 trade.live_status = fill.status
+
+                self.live_ledger.reconcile_order(
+                    trade.order_id,
+                    trade.proposal.market.market_id,
+                    trade.proposal.market.question,
+                    trade.proposal.side,
+                    (
+                        trade.proposal.market.yes_token_id
+                        if trade.proposal.side == "BUY_YES"
+                        else trade.proposal.market.no_token_id
+                    ),
+                    fill.requested_size or trade.requested_size,
+                    fill.matched_size,
+                    fill.average_price or effective_fill_price,
+                    fill.status,
+                )
                 print("[LIVE RECONCILE]", trade.order_id, fill.status,
                       "matched=", fill.matched_size,
                       "remaining=", fill.remaining_size,
@@ -685,6 +713,28 @@ class TradingCompany:
                         trade.live_status = "PARTIALLY_FILLED_TERMINAL"
             except Exception as exc:
                 print("[LIVE RECONCILE ERROR]", trade.order_id, repr(exc))
+
+        # Mark every venue-confirmed position from the freshest public prices.
+        # This is informational/risk P&L only; it never fabricates a fill.
+        try:
+            for market_id, position in list(self.live_ledger.positions.items()):
+                mark = self.feed.current_price(market_id)
+                if mark is None:
+                    continue
+                token_mark = mark if position.side == "BUY_YES" else 1.0 - mark
+                self.live_ledger.mark(market_id, token_mark)
+            snapshot = self.live_ledger.snapshot()
+            self.daily_pnl = snapshot["daily_pnl"]
+            print(
+                "[LIVE PORTFOLIO]",
+                "positions=", snapshot["positions"],
+                "realized=%.4f" % snapshot["realized_pnl"],
+                "unrealized=%.4f" % snapshot["unrealized_pnl"],
+                "daily=%.4f" % snapshot["daily_pnl"],
+                "exposure_cost=%.4f" % snapshot["exposure_cost"],
+            )
+        except Exception as exc:
+            print("[LIVE PORTFOLIO ERROR]", repr(exc))
 
     def settle_due_trades(self):
         if self.execution.enabled:
