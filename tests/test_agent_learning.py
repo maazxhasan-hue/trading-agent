@@ -88,10 +88,20 @@ class AgentLearningTests(unittest.TestCase):
                 "brier_sum": 4.0,
                 "last_updated": 1.0,
             }
+            for i in range(30):
+                store.data["history"].append({
+                    "created_at": float(i),
+                    "resolved_at": float(i + 1),
+                    "market_id": "m" + str(i),
+                    "outcome": 1,
+                    "confidence": 0.80,
+                    "directions": {"trained-agent": 1 if i < 20 else -1},
+                })
             ok, reason, stats = store.qualification("trained-agent")
-            self.assertTrue(ok)
-            self.assertEqual(reason, "validated")
+            self.assertFalse(ok)
+            self.assertEqual(reason, "walk_forward_validation_failed")
             self.assertAlmostEqual(stats["accuracy"], 20 / 30)
+            self.assertEqual(stats["validation"]["walk_forward_windows"], 2)
 
     def test_qualified_agents_reports_unqualified_and_qualified(self):
         with tempfile.TemporaryDirectory() as tmp:
