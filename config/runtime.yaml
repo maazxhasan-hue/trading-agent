@@ -1,6 +1,9 @@
 mode: paper
 scan_interval_seconds: 300
 max_markets_per_scan: 1000
+research_markets_per_cycle: 25
+max_research_markets: 100
+max_research_age_seconds: 900
 edge_min_pct: 8.0
 confidence_min: 0.80
 max_position_fraction: 0.06
@@ -15,15 +18,20 @@ browser_headless: true
 workspace_root: agent_workspaces
 
 research_before_trade: true
+research_freshness_gate: true
+research_provenance: true
 continuous_order_reconciliation: true
 research_sources:
   - market_data
   - order_book
   - news
   - macro_events
-  - social_x
+  - event_calendar_optional
+  - social_x_optional
   - crypto
   - cross_market
 
+require_event_calendar: false
+require_x_social: false
 revenge_trading: false
 averaging_down: false
