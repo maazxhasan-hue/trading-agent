@@ -5,6 +5,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 ENV PORT=8080
+ENV CLOUD_RUNTIME=true
+ENV LIVE_RUNTIME_APPROVED=false
 ENV SCAN_INTERVAL_SECONDS=300
 ENV AGENT_WORKSPACE_ROOT=/data/agent_workspaces
 ENV AGENT_HEALTH_FILE=/data/logs/agent_runtime_health.json
@@ -19,6 +21,7 @@ ENV LEARNING_MAX_BRIER=0.25
 ENV MIN_VALIDATED_AGENTS=3
 ENV POST_TRADE_FILE=/data/agent_health.json
 ENV TRADING_LOG_FILE=/data/paper_trades.csv
+ENV LIVE_PORTFOLIO_FILE=/data/live_portfolio.json
 ENV GAMMA_PAGE_SIZE=100
 ENV GAMMA_MIN_REQUEST_INTERVAL_SECONDS=2
 ENV GAMMA_REQUEST_RETRIES=3
