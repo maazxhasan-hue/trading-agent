@@ -20,6 +20,23 @@ class AgentLearningTests(unittest.TestCase):
             self.assertEqual(store.stats("momentum-v1")["accuracy"], 1.0)
             self.assertEqual(store.stats("bear-v1")["accuracy"], 0.0)
 
+    def test_small_edge_forecast_is_recorded_by_store(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentLearningStore(path=tmp + "/learning.json", horizon_seconds=0)
+            store.record_forecast(
+                "m1", "test", 0.500,
+                {"momentum-v1": 1.0}, 0.85, 0.005, now=1.0,
+            )
+            self.assertEqual(len(store.data["pending"]), 1)
+
+    def test_market_observations_build_persistent_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentLearningStore(path=tmp + "/learning.json", horizon_seconds=0)
+            for i in range(3):
+                store.record_observation("m1", 0.50 + i * 0.01, now=float(i), save=False)
+            store._save()
+            self.assertEqual(store.history_for_market("m1"), [0.50, 0.51, 0.52])
+
     def test_weight_waits_for_sample_floor(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = AgentLearningStore(path=tmp + "/learning.json", horizon_seconds=0)
