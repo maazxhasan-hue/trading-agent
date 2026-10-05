@@ -62,6 +62,8 @@ class ResearchSnapshot:
     event_count: int = 0
     event_status: str = "not_configured"
     fair_value_components: dict = field(default_factory=dict)
+    best_bid: float = 0.0
+    best_ask: float = 0.0
 
 
 def _history_signal(history):
@@ -96,7 +98,7 @@ def _market_id(market):
 
 def _book(token_id):
     if not token_id:
-        return 0.0, 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0, 0.0
     try:
         r = SESSION.get(CLOB_BOOK, params={"token_id": token_id}, timeout=5)
         r.raise_for_status()
@@ -107,9 +109,13 @@ def _book(token_id):
         ask_depth = sum(float(x.get("size", 0)) for x in asks[:10])
         total = bid_depth + ask_depth
         imbalance = (bid_depth - ask_depth) / total if total else 0.0
-        return imbalance, total, 0.0
+        bid_prices = [float(x.get("price")) for x in bids if x.get("price") is not None]
+        ask_prices = [float(x.get("price")) for x in asks if x.get("price") is not None]
+        best_bid = max(bid_prices) if bid_prices else 0.0
+        best_ask = min(ask_prices) if ask_prices else 0.0
+        return imbalance, total, 0.0, best_bid, best_ask
     except Exception:
-        return 0.0, 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0, 0.0
 
 
 def _news(question):
@@ -250,7 +256,7 @@ def research_market(market, markets):
         warnings.append("historical_data_unavailable")
 
     token_id = _token_id(market)
-    imbalance, depth, _ = _book(token_id)
+    imbalance, depth, _, best_bid, best_ask = _book(token_id)
     quality.add("order_book", bool(depth), fetched_at, 1 if depth else 0, MAX_SOURCE_AGE)
 
     news_score, news_evidence = _news(market.question)
@@ -340,4 +346,6 @@ def research_market(market, markets):
         event_count=len(events),
         event_status=event_status,
         fair_value_components=fv.components,
+        best_bid=best_bid,
+        best_ask=best_ask,
     )
