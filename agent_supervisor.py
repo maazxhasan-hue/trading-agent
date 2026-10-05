@@ -28,8 +28,7 @@ class AgentSupervisor:
             agent: {
                 "workspace": str(rt.workspace),
                 "browser_profile": str(rt.browser_profile),
-                "browser_enabled": rt.policy.browser_enabled,
-                "terminal_enabled": rt.policy.terminal_enabled,
+                **self.runtime.capability_status(rt),
             }
             for agent, rt in self.runtimes.items()
         }
@@ -169,7 +168,7 @@ class AgentSupervisor:
     def run(self):
         self.run_health_server()
         from agent import TradingCompany
-        company = TradingCompany()
+        company = TradingCompany(runtime_manager=self.runtime)
         interval = int(os.getenv("SCAN_INTERVAL_SECONDS", "300"))
         next_run = time.monotonic()
         while True:
