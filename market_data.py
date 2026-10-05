@@ -221,7 +221,7 @@ def markets(max_markets=1000):
 
     target = max(1, min(int(max_markets), 1000))
     page_size = max(
-        20,
+        1,
         min(int(os.getenv("GAMMA_PAGE_SIZE", "100")), target),
     )
 
