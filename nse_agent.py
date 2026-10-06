@@ -17,6 +17,7 @@ from zerodha_adapter import ZerodhaExecution, ZerodhaLocked
 from nse_debate import NSEPreTradeDebate
 from nse_regime import classify as classify_regime
 from trade_journal import TradeJournal
+from zerodha_order_manager import ZerodhaOrderManager, OrderLifecycleError
 
 SCAN_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "300"))
 MIN_AGENTS = int(os.getenv("MIN_VALIDATED_AGENTS", "3"))
@@ -58,6 +59,7 @@ class NSETradingCompany:
             max_conflict=float(os.getenv("DEBATE_MAX_CONFLICT", "0.45")),
         )
         self.journal = TradeJournal()
+        self.order_manager = ZerodhaOrderManager(self.execution, self.journal)
         self.cash = float(os.getenv("PAPER_STARTING_CAPITAL", "100000"))
         self.peak = self.cash
         self.daily_pnl = 0.0
@@ -353,18 +355,29 @@ class NSETradingCompany:
         if self.execution.enabled:
             price = m.last_price * (1 + 0.0005 * sig.direction)
             try:
-                oid = self.execution.place_limit(
-                    __import__("zerodha_adapter").OrderRequest(
-                        m.tradingsymbol, m.exchange, side, qty, price,
-                        os.getenv("ZERODHA_PRODUCT", "MIS"),
-                    )
+                intent_id = f"nse-{self.paper_cycle}-{m.market_id}-{side}-{qty}"
+                request = __import__("zerodha_adapter").OrderRequest(
+                    m.tradingsymbol, m.exchange, side, qty, price,
+                    os.getenv("ZERODHA_PRODUCT", "MIS"), intent_id,
                 )
+                fill = self.order_manager.submit(request, intent_id)
+                filled = int(fill["filled_quantity"])
+                avg_price = float(fill["average_price"])
+                if filled <= 0 or avg_price <= 0:
+                    raise OrderLifecycleError("broker returned no confirmed fill")
                 self.open_positions[m.market_id] = {
-                    "order_id": oid, "side": side, "qty": qty
+                    "market_id": m.market_id,
+                    "order_id": fill["order_id"],
+                    "side": side,
+                    "qty": filled,
+                    "entry": avg_price,
+                    "stop_pct": sig.stop_pct,
+                    "entry_cycle": self.paper_cycle,
                 }
                 self.traded_today.add(m.market_id)
-                print("[ZERODHA_ORDER]", oid, m.tradingsymbol, side, qty, price)
+                print("[ZERODHA_FILL]", fill)
             except Exception as exc:
+                self.journal.record("ORDER_FAILURE", symbol=m.tradingsymbol, error=repr(exc))
                 print("[zerodha execution blocked]", repr(exc))
         else:
             entry = self._paper_fill_price(m.last_price, side)
