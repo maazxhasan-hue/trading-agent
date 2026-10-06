@@ -24,6 +24,7 @@ class OrderRequest:
     quantity: int
     price: float
     product: str = "MIS"
+    tag: str | None = None
 
 
 class ZerodhaExecution:
@@ -98,6 +99,7 @@ class ZerodhaExecution:
             order_type=self.client.ORDER_TYPE_LIMIT,
             price=float(request.price),
             validity=self.client.VALIDITY_DAY,
+            tag=request.tag,
         )
 
     def funds_available(self):
