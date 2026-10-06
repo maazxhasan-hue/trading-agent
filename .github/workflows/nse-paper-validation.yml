@@ -1,6 +1,8 @@
 name: Continuous NSE Paper Validation
 
 on:
+  push:
+    branches: ["main"]
   workflow_dispatch:
   schedule:
     - cron: "*/5 9-14 * * 1-5"
