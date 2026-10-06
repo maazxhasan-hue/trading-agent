@@ -95,7 +95,7 @@ class AgentLearningTests(unittest.TestCase):
                     "market_id": "m" + str(i),
                     "outcome": 1,
                     "confidence": 0.80,
-                    "directions": {"trained-agent": 1 if i >= 10 else -1},
+                    "directions": {"trained-agent": 1 if i < 20 else -1},
                 })
             ok, reason, stats = store.qualification("trained-agent")
             self.assertFalse(ok)
