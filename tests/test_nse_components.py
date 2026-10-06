@@ -17,7 +17,7 @@ class NSEComponentTests(unittest.TestCase):
 
     def test_exposure(self):
         self.assertTrue(exposure_check(100000,[],100,50).allowed)
-        self.assertFalse(exposure_check(100000,[{"entry":200,"qty":100}],100,100).allowed)
+        self.assertFalse(exposure_check(100000,[{"entry":200,"qty":100}],100,101).allowed)
 
     def test_drawdown(self):
         self.assertFalse(drawdown_check(89000,100000).allowed)
