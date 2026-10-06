@@ -61,7 +61,7 @@ class NSETradingCompany:
 
     def features(self, market):
         rows = self.feed.history(
-            market, days=10, interval=os.getenv("NSE_INTERVAL", "5minute")
+            market, days=10, interval=os.getenv("NSE_INTERVAL", "5m")
         )
         closes = [float(r["close"]) for r in rows if r.get("close")]
         vols = [float(r.get("volume", 0)) for r in rows]
