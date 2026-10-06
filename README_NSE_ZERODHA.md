@@ -4,7 +4,7 @@ The repository now supports an Indian NSE cash-equity backend through Zerodha Ki
 
 ## Architecture
 
-`Zerodha market data -> NSE feature engine -> independent strategy forecasts -> persistent learning -> 30-sample + walk-forward qualification -> portfolio/risk gates -> paper limit orders -> optional live Zerodha limit orders`
+`Free NSE research (Yahoo) / authorised Zerodha data -> NSE feature engine -> independent strategy forecasts -> persistent learning -> qualification -> portfolio/risk gates -> paper orders -> gated live Zerodha limit orders`
 
 The NSE engine is in `nse_agent.py`, market access is in `nse_market_data.py`, and authenticated execution is in `zerodha_adapter.py`.
 
@@ -44,3 +44,28 @@ Only after the model qualification and paper validation gates are genuinely sati
 and a Zerodha-whitelisted static IP.
 
 The code deliberately refuses live execution when any of these conditions are missing.
+
+
+## Zero-cost market-data mode
+
+The repository can run NSE research and paper trading without buying Zerodha market-data access by setting `NSE_MARKET_DATA_PROVIDER=yahoo` and supplying an explicit `NSE_SYMBOLS` list. This mode is for research/paper use only; the system must not use third-party delayed/research data as the basis for live orders.
+
+Zerodha's Personal API is free for order/portfolio operations, while Zerodha's own live market-data and historical-candle APIs are part of the paid Connect plan.
+
+
+## Free-first runtime
+
+The default research path is `NSE_MARKET_DATA_PROVIDER=yahoo`. It uses free Yahoo Finance data for research and paper trading and never authorises live orders.
+
+The engine has an explicit data-authorisation boundary:
+- `free-research`: Yahoo data; research/paper only.
+- `zerodha-authorized`: Zerodha data-enabled feed; eligible for the live data gate.
+- Live execution additionally checks that the feed is fresh. If the feed is stale or unauthorised, the agent refuses to submit an order.
+
+This lets the system continuously research NSE markets at zero data-subscription cost without silently treating delayed third-party data as real-time execution data.
+
+## Important zero-cost limitation
+
+Zerodha's Personal API is free for order/portfolio operations, but Zerodha's official documentation says it does not include live or historical market data. The paid Kite Connect plan is ₹500/month per API key for those feeds. Therefore, this repository deliberately does **not** use the free Yahoo path to justify live trading.
+
+NSE's official MCP provides current CM prices roughly 1–3 minutes behind real time plus historical and breadth tools, but NSE states that its MCP data is for informational/educational purposes and not intended for real-time trading. It can strengthen the research layer, but it is not treated as an authorised live execution feed.
