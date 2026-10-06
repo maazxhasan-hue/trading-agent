@@ -30,7 +30,7 @@ jobs:
       NSE_MARKET_DATA_PROVIDER: "yahoo"
       NSE_INTERVAL: "5m"
       MAX_MARKETS_PER_SCAN: "1000"
-      NSE_RESEARCH_MARKETS_PER_CYCLE: "100"
+      NSE_RESEARCH_MARKETS_PER_CYCLE: "1000"
       SCAN_INTERVAL_SECONDS: "300"
       AGENT_LEARNING_FILE: "data/nse_agent_learning.json"
       PAPER_STATE_FILE: "data/nse_paper_state.json"
