@@ -7,6 +7,7 @@ from nse_risk import exposure_check, drawdown_check
 from trade_journal import TradeJournal
 
 class NSEComponentTests(unittest.TestCase):
+    """Core production-stack smoke tests."""
     def test_regime_up(self):
         r=classify({"r5":0.01,"r20":0.02,"vol":0.005,"breakout":0.01,"volume_ratio":1.8})
         self.assertEqual(r.direction,1)
