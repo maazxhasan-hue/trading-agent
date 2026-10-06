@@ -18,6 +18,7 @@ from zerodha_adapter import ZerodhaExecution, ZerodhaLocked
 SCAN_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "300"))
 MIN_AGENTS = int(os.getenv("MIN_VALIDATED_AGENTS", "3"))
 MAX_POSITION = float(os.getenv("MAX_POSITION_FRACTION", "0.06"))
+MAX_TOTAL_EXPOSURE = float(os.getenv("MAX_TOTAL_EXPOSURE_FRACTION", "0.30"))
 MAX_DAILY_LOSS = float(os.getenv("MAX_DAILY_LOSS_FRACTION", "0.03"))
 MAX_DRAWDOWN = float(os.getenv("MAX_PORTFOLIO_DRAWDOWN_FRACTION", "0.10"))
 MIN_CONF = float(os.getenv("NSE_MIN_CONFIDENCE", "0.58"))
@@ -301,8 +302,20 @@ class NSETradingCompany:
         risk_cap = capital * MAX_POSITION
         risk_per_share = max(m.last_price * sig.stop_pct, 0.05)
         qty = max(1, int(risk_cap / risk_per_share))
-        max_notional = capital * MAX_POSITION
-        qty = min(qty, max(1, int(max_notional / m.last_price)))
+
+        # Enforce a portfolio-wide exposure ceiling in addition to the
+        # per-position cap.
+        existing_notional = 0.0
+        for position in self.open_positions.values():
+            entry = float(position.get("entry", 0.0) or 0.0)
+            existing_notional += abs(entry * int(position.get("qty", 0) or 0))
+        remaining_notional = max(0.0, capital * MAX_TOTAL_EXPOSURE - existing_notional)
+        if remaining_notional < m.last_price:
+            print("[risk] total exposure cap reached; no order")
+            return
+
+        max_notional = min(capital * MAX_POSITION, remaining_notional)
+        qty = min(qty, int(max_notional / m.last_price))
         if qty <= 0:
             return
         side = "BUY" if sig.direction > 0 else "SELL"
