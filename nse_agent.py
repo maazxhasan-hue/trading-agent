@@ -5,6 +5,7 @@ Live Zerodha execution requires an authorised Zerodha data provider as well as
 the existing live-trading gates. No profitability is guaranteed.
 """
 import json
+import hashlib
 import os
 import time
 from datetime import datetime
@@ -199,6 +200,8 @@ class NSETradingCompany:
             conflict=debate.conflict,
             score=debate.score,
             challenges=debate.challenges,
+            votes=debate.votes,
+            qualified_agents=qualified,
         )
         if debate.decision == "NO_TRADE":
             return None
@@ -367,7 +370,8 @@ class NSETradingCompany:
         if self.execution.enabled:
             price = m.last_price * (1 + 0.0005 * sig.direction)
             try:
-                intent_id = f"nse-{self.paper_cycle}-{m.market_id}-{side}-{qty}"
+                raw_intent = f"{self.paper_cycle}:{m.market_id}:{side}:{qty}"
+                intent_id = "nse-" + hashlib.sha256(raw_intent.encode()).hexdigest()[:12]
                 request = __import__("zerodha_adapter").OrderRequest(
                     m.tradingsymbol, m.exchange, side, qty, price,
                     os.getenv("ZERODHA_PRODUCT", "MIS"), intent_id,
