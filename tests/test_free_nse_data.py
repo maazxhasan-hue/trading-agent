@@ -65,5 +65,26 @@ class TestFreeNSEPath(unittest.TestCase):
             for k, v in old.items():
                 if v is None: os.environ.pop(k, None)
                 else: os.environ[k] = v
+    def test_paper_session_close_realizes_positions(self):
+        old = {k: os.environ.get(k) for k in ("NSE_MARKET_DATA_PROVIDER", "PAPER_STARTING_CAPITAL", "AGENT_LEARNING_FILE")}
+        try:
+            os.environ["NSE_MARKET_DATA_PROVIDER"] = "yahoo"
+            os.environ["PAPER_STARTING_CAPITAL"] = "100000"
+            import tempfile
+            with tempfile.TemporaryDirectory() as d:
+                os.environ["AGENT_LEARNING_FILE"] = os.path.join(d, "learning.json")
+                company = NSETradingCompany()
+                market = type("M", (), {"market_id": "TCS", "question": "TCS", "tradingsymbol": "TCS", "last_price": 100.0})()
+                signal = Signal(market, 1, 0.8, 0.9, 0.01, "test")
+                company.paper_or_live(signal)
+                company._close_all_paper_positions({"TCS": 101.0}, "session_end")
+                self.assertEqual(company.open_positions, {})
+                self.assertGreater(company.realized_pnl, 0)
+                self.assertGreater(company.daily_realized_pnl, 0)
+        finally:
+            for k, v in old.items():
+                if v is None: os.environ.pop(k, None)
+                else: os.environ[k] = v
+
 if __name__ == "__main__":
     unittest.main()
