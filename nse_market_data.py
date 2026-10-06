@@ -11,6 +11,8 @@ independently gated in nse_agent.py.
 """
 import os
 import time
+import io
+import requests
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -43,6 +45,8 @@ class NSEPublicFeed:
         self.broker = ZerodhaExecution()
         self._instruments = {}
         self._loaded_at = 0.0
+        self._universe_loaded_at = 0.0
+        self._yahoo_universe = []
         if self.provider == "zerodha":
             self._load_instruments()
 
@@ -110,12 +114,29 @@ class NSEPublicFeed:
             for x in os.getenv("NSE_SYMBOLS", "").split(",")
             if x.strip()
         ]
-        if not allow:
-            raise RuntimeError(
-                "NSE_SYMBOLS must be set for the free Yahoo provider. "
-                "Example: NSE_SYMBOLS=RELIANCE,INFY,HDFCBANK,TCS"
-            )
-        return allow[:1000]
+        if allow:
+            return allow[:1000]
+        if time.time() - self._universe_loaded_at < 3600 and self._yahoo_universe:
+            return self._yahoo_universe[:1000]
+        url = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
+        try:
+            response = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+            response.raise_for_status()
+            import csv
+            rows = csv.DictReader(io.StringIO(response.text))
+            symbols = []
+            for row in rows:
+                symbol = str(row.get("SYMBOL", "")).strip().upper()
+                series = str(row.get(" SERIES", row.get("SERIES", ""))).strip().upper()
+                if symbol and (not series or series == "EQ"):
+                    symbols.append(symbol)
+            self._yahoo_universe = list(dict.fromkeys(symbols))
+            self._universe_loaded_at = time.time()
+        except Exception as exc:
+            print("[nse universe recovered]", repr(exc))
+            if not self._yahoo_universe:
+                raise RuntimeError("Unable to load NSE equity universe and NSE_SYMBOLS is not set.") from exc
+        return self._yahoo_universe[:1000]
 
     @staticmethod
     def _yahoo_symbol(symbol):
@@ -125,36 +146,37 @@ class NSEPublicFeed:
         if yf is None:
             raise RuntimeError("Install yfinance for the free market-data provider.")
         out = []
-        for symbol in symbols:
-            ticker = yf.Ticker(self._yahoo_symbol(symbol))
+        tickers = [self._yahoo_symbol(s) for s in symbols]
+        for start in range(0, len(tickers), 100):
+            batch = tickers[start:start + 100]
             try:
-                hist = ticker.history(period="2d", interval="5m", auto_adjust=False)
-            except Exception as exc:
-                print("[yahoo data recovered]", symbol, repr(exc))
-                continue
-            if hist is None or hist.empty:
-                continue
-            last = hist.iloc[-1]
-            try:
-                price = float(last["Close"])
-                volume = float(last.get("Volume", 0) or 0)
-            except (TypeError, ValueError):
-                continue
-            if price <= 0:
-                continue
-            # Yahoo data is not treated as an authorised real-time execution feed.
-            liquidity = volume * price
-            out.append(
-                NSEMarket(
-                    market_id=symbol,
-                    question=symbol,
-                    tradingsymbol=symbol,
-                    instrument_token=0,
-                    last_price=price,
-                    volume=volume,
-                    liquidity=liquidity,
+                hist = yf.download(
+                    tickers=batch, period="2d", interval="5m",
+                    auto_adjust=False, progress=False, threads=True,
+                    group_by="ticker",
                 )
-            )
+            except Exception as exc:
+                print("[yahoo batch recovered]", start, repr(exc))
+                continue
+            for symbol in symbols[start:start + 100]:
+                ticker = self._yahoo_symbol(symbol)
+                try:
+                    frame = hist[ticker] if len(batch) > 1 else hist
+                    frame = frame.dropna(subset=["Close"])
+                    if frame.empty:
+                        continue
+                    last = frame.iloc[-1]
+                    price = float(last["Close"])
+                    volume = float(last.get("Volume", 0) or 0)
+                except (KeyError, IndexError, TypeError, ValueError):
+                    continue
+                if price <= 0:
+                    continue
+                out.append(NSEMarket(
+                    market_id=symbol, question=symbol, tradingsymbol=symbol,
+                    instrument_token=0, last_price=price, volume=volume,
+                    liquidity=volume * price,
+                ))
         out.sort(key=lambda x: (x.volume, x.liquidity), reverse=True)
         return out
 
