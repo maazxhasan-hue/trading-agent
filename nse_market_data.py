@@ -51,7 +51,21 @@ class NSEPublicFeed:
 
     @property
     def is_live_authorized_data(self):
+        # Only a Zerodha data-enabled feed is considered authorised for live
+        # execution. Yahoo is useful for free research/paper trading, but must
+        # never be promoted to a live execution feed.
         return self.provider == "zerodha"
+
+    @property
+    def data_label(self):
+        return "zerodha-authorized" if self.is_live_authorized_data else "free-research"
+
+    def freshness_seconds(self, market):
+        # The free provider is deliberately treated as non-live. This prevents
+        # delayed/research data from ever passing a live execution gate.
+        if self.provider != "zerodha":
+            return float("inf")
+        return 0.0
 
     def _load_instruments(self):
         if not self.broker.client:
