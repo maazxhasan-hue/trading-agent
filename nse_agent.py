@@ -19,7 +19,6 @@ SCAN_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "300"))
 MIN_AGENTS = int(os.getenv("MIN_VALIDATED_AGENTS", "3"))
 MAX_POSITION = float(os.getenv("MAX_POSITION_FRACTION", "0.06"))
 MAX_TOTAL_EXPOSURE = float(os.getenv("MAX_TOTAL_EXPOSURE_FRACTION", "0.30"))
-MAX_DAILY_LOSS = float(os.getenv("MAX_DAILY_LOSS_FRACTION", "0.03"))
 MAX_DRAWDOWN = float(os.getenv("MAX_PORTFOLIO_DRAWDOWN_FRACTION", "0.10"))
 MIN_CONF = float(os.getenv("NSE_MIN_CONFIDENCE", "0.58"))
 MIN_SCORE = float(os.getenv("NSE_MIN_SCORE", "0.60"))
@@ -373,7 +372,8 @@ class NSETradingCompany:
             return
 
         print("\n[%s] NSE scanning..." % datetime.now().isoformat(timespec="seconds"))
-        markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "100")))
+        markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "1000")))
+        print("[nse] market universe scanned=", len(markets))
         prices = {m.market_id: m.last_price for m in markets}
 
         if today != self.day:
@@ -417,12 +417,10 @@ class NSETradingCompany:
             "qualified=", len(qualified),
         )
         equity = self._paper_equity(prices) if not self.execution.enabled else self.cash
-        if self.daily_pnl <= -self.cash * MAX_DAILY_LOSS or (
-            1 - equity / max(self.peak, 1)
-        ) >= MAX_DRAWDOWN:
-            print("[risk] kill switch: daily loss/drawdown limit")
+        if (1 - equity / max(self.peak, 1)) >= MAX_DRAWDOWN:
+            print("[risk] kill switch: portfolio drawdown limit")
             return
-        for m in markets[:int(os.getenv("NSE_RESEARCH_MARKETS_PER_CYCLE", "25"))]:
+        for m in markets[:int(os.getenv("NSE_RESEARCH_MARKETS_PER_CYCLE", "100"))]:
             try:
                 f = self.features(m)
                 if not f:
