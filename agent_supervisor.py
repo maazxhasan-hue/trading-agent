@@ -46,53 +46,30 @@ class AgentSupervisor:
         """Expose real validation progress without authorizing trades."""
         try:
             from agent_learning import AgentLearningStore
-            store = AgentLearningStore()
-            ids = [
-                "momentum-v1", "mean_reversion-v1", "event_driven-v1",
-                "crypto_specialist-v1", "x_social_research-v1",
-                "cross_market_arbitrage-v1",
-            ]
+            backend = os.getenv("TRADING_BACKEND", "polymarket").lower()
+            path = os.getenv("AGENT_LEARNING_FILE", "/data/nse_agent_learning.json" if backend == "zerodha_nse" and os.path.isdir("/data") else ("nse_agent_learning.json" if backend == "zerodha_nse" else ("/data/agent_learning.json" if os.path.isdir("/data") else "agent_learning.json")))
+            store = AgentLearningStore(path=path)
+            ids = (["momentum-v1","mean_reversion-v1","event_driven-v1","cross_market_arbitrage-v1"] if backend == "zerodha_nse" else ["momentum-v1","mean_reversion-v1","event_driven-v1","crypto_specialist-v1","x_social_research-v1","cross_market_arbitrage-v1"])
             qualified, details = store.qualified_agents(ids)
-            return {
-                "status": "qualified" if len(qualified) >= 3 else "collecting",
-                "qualified_count": len(qualified),
-                "required": 3,
-                "qualified_agents": qualified,
-                "resolved_forecasts": len(store.data.get("history", [])),
-                "pending_forecasts": len(store.data.get("pending", [])),
-                "observations": store.observation_count(),
-                "agents": details,
-                "live_trading_authorized": False,
-            }
+            return {"status":"qualified" if len(qualified) >= 3 else "collecting","qualified_count":len(qualified),"required":3,"qualified_agents":qualified,"resolved_forecasts":len(store.data.get("history",[])),"pending_forecasts":len(store.data.get("pending",[])),"observations":store.observation_count(),"agents":details,"live_trading_authorized":False}
         except Exception as exc:
-            return {
-                "status": "unavailable",
-                "error": repr(exc),
-                "live_trading_authorized": False,
-            }
+            return {"status":"unavailable","error":repr(exc),"live_trading_authorized":False}
 
     def metrics(self):
         try:
-            from market_data import feed_status
             from agent_learning import AgentLearningStore
-            store = AgentLearningStore()
-            metrics_path = os.getenv(
-                "PAPER_METRICS_FILE",
-                "/data/paper_metrics.json" if os.path.isdir("/data") else "paper_metrics.json",
-            )
+            backend = os.getenv("TRADING_BACKEND", "polymarket").lower()
+            path = os.getenv("AGENT_LEARNING_FILE", "/data/nse_agent_learning.json" if backend == "zerodha_nse" and os.path.isdir("/data") else ("nse_agent_learning.json" if backend == "zerodha_nse" else ("/data/agent_learning.json" if os.path.isdir("/data") else "agent_learning.json")))
+            store = AgentLearningStore(path=path)
+            metrics_path = os.getenv("PAPER_METRICS_FILE","/data/paper_metrics.json" if os.path.isdir("/data") else "paper_metrics.json")
             paper = {}
             if os.path.exists(metrics_path):
                 with open(metrics_path, encoding="utf-8") as f:
-                    raw = json.load(f)
-                    paper = raw if isinstance(raw, dict) else {}
-            return {
-                "feed": feed_status(),
-                "validation": self.validation(),
-                "paper": paper,
-                "live_trading_authorized": False,
-            }
+                    raw=json.load(f)
+                    paper=raw if isinstance(raw,dict) else {}
+            return {"backend":backend,"feed":{"status":"zerodha_quote" if backend == "zerodha_nse" else "polymarket_gamma"},"validation":self.validation(),"paper":paper,"live_trading_authorized":False}
         except Exception as exc:
-            return {"status": "unavailable", "error": repr(exc), "live_trading_authorized": False}
+            return {"status":"unavailable","error":repr(exc),"live_trading_authorized":False}
 
     def dashboard_html(self):
         data = self.metrics()
@@ -125,7 +102,7 @@ class AgentSupervisor:
             resolved=validation.get("resolved_forecasts", 0),
             pending=validation.get("pending_forecasts", 0),
             feed_status=data.get("feed", {}).get("status", "unknown"),
-            stale=data.get("feed", {}).get("stale", True),
+            stale=data.get("feed", {}).get("stale", False),
             rows=rows,
         )
 
@@ -167,8 +144,13 @@ class AgentSupervisor:
 
     def run(self):
         self.run_health_server()
-        from agent import TradingCompany
-        company = TradingCompany(runtime_manager=self.runtime)
+        backend = os.getenv("TRADING_BACKEND", "polymarket").lower()
+        if backend == "zerodha_nse":
+            from nse_agent import NSETradingCompany
+            company = NSETradingCompany()
+        else:
+            from agent import TradingCompany
+            company = TradingCompany(runtime_manager=self.runtime)
         interval = int(os.getenv("SCAN_INTERVAL_SECONDS", "300"))
         next_run = time.monotonic()
         while True:

@@ -7,6 +7,7 @@ learning can improve agent weighting, but it can never authorize a trade.
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -68,7 +69,7 @@ class AgentLearningStore:
             price = float(price)
         except (TypeError, ValueError):
             return
-        if not 0.0 < price < 1.0:
+        if not math.isfinite(price) or price <= 0:
             return
         now = float(now if now is not None else time.time())
         key = str(market_id)
@@ -160,8 +161,14 @@ class AgentLearningStore:
                     continue
                 current = float(current)
                 previous = float(item["price"])
-                min_move = float(os.getenv("LEARNING_MIN_MOVE", "0.005"))
-                if abs(current - previous) < min_move:
+                move_mode = os.getenv("LEARNING_MOVE_MODE", "absolute").lower()
+                if move_mode == "relative":
+                    threshold = float(os.getenv("LEARNING_MIN_MOVE_PCT", "0.001"))
+                    move = abs(current - previous) / max(abs(previous), 1e-12)
+                else:
+                    threshold = float(os.getenv("LEARNING_MIN_MOVE", "0.005"))
+                    move = abs(current - previous)
+                if move < threshold:
                     # A flat market is not evidence that the directional thesis
                     # was right or wrong. Give it a bounded number of extra
                     # horizons, then record it as neutral so it cannot remain
