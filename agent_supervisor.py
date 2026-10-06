@@ -167,8 +167,13 @@ class AgentSupervisor:
 
     def run(self):
         self.run_health_server()
-        from agent import TradingCompany
-        company = TradingCompany(runtime_manager=self.runtime)
+        backend = os.getenv("TRADING_BACKEND", "polymarket").lower()
+        if backend == "zerodha_nse":
+            from nse_agent import NSETradingCompany
+            company = NSETradingCompany()
+        else:
+            from agent import TradingCompany
+            company = TradingCompany(runtime_manager=self.runtime)
         interval = int(os.getenv("SCAN_INTERVAL_SECONDS", "300"))
         next_run = time.monotonic()
         while True:
