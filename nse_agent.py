@@ -158,8 +158,6 @@ class NSETradingCompany:
             "momentum-v1": 0.55 * f["r5"] + 0.45 * f["r20"],
             "mean_reversion-v1": -f["reversion"],
             "event_driven-v1": 0.40 * f["breakout"] + 0.20 * (f["volume_ratio"] - 1),
-            "crypto_specialist-v1": 0.0,
-            "x_social_research-v1": 0.0,
             "cross_market_arbitrage-v1": 0.50 * f["r20"] + 0.20 * (f["volume_ratio"] - 1),
         }
         return {
@@ -395,7 +393,44 @@ class NSETradingCompany:
                 "score=%.3f" % sig.score, "confidence=%.2f" % sig.confidence,
             )
 
+    def _reconcile_live_state(self):
+        """Fail closed if broker positions disagree with the engine's state."""
+        if not self.execution.enabled:
+            return True
+        broker_positions = self.execution.positions().get("day", [])
+        broker = {}
+        for p in broker_positions:
+            if p.get("exchange") != "NSE":
+                continue
+            qty = int(p.get("quantity", 0) or 0)
+            if qty:
+                broker[p.get("tradingsymbol")] = qty
+        local = {}
+        for p in self.open_positions.values():
+            qty = int(p.get("qty", 0) or 0)
+            if qty:
+                signed = qty if p.get("side") == "BUY" else -qty
+                local[p.get("market_id")] = local.get(p.get("market_id"), 0) + signed
+        if set(local) != set(broker):
+            self.journal.record("RECONCILIATION_FAILURE", local=local, broker=broker)
+            return False
+        for symbol, qty in broker.items():
+            local_qty = 0
+            for p in self.open_positions.values():
+                if p.get("market_id") == symbol:
+                    local_qty += int(p.get("qty", 0) or 0) * (1 if p.get("side") == "BUY" else -1)
+            if local_qty != qty:
+                self.journal.record("RECONCILIATION_FAILURE", symbol=symbol, local=local_qty, broker=qty)
+                return False
+        return True
+
     def cycle(self):
+        if os.getenv("LIVE_KILL_SWITCH", "false").lower() == "true":
+            self.journal.record("KILL_SWITCH", reason="LIVE_KILL_SWITCH")
+            print("[risk] live kill switch active; no cycle executed")
+            return
+        if self.execution.enabled and not self._reconcile_live_state():
+            raise ZerodhaLocked("Broker/local position reconciliation failed; new trading is blocked.")
         today = datetime.now().date().isoformat()
         now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
         session_end = (
