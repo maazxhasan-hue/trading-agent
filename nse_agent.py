@@ -250,6 +250,13 @@ class NSETradingCompany:
                 self.realized_pnl += pnl
                 self.daily_realized_pnl += pnl
                 closed.append((market_id, reason, pnl, exit_price))
+                self.journal.record(
+                    "PAPER_EXIT",
+                    symbol=market_id,
+                    reason=reason,
+                    pnl=pnl,
+                    exit_price=exit_price,
+                )
                 del self.open_positions[market_id]
         equity = self._paper_equity(prices)
         self.daily_pnl = self.daily_realized_pnl + (equity - self.cash - self.realized_pnl)
@@ -271,6 +278,13 @@ class NSETradingCompany:
             self.realized_pnl += pnl
             self.daily_realized_pnl += pnl
             closed.append((market_id, reason, pnl, exit_price))
+            self.journal.record(
+                "PAPER_EXIT",
+                symbol=market_id,
+                reason=reason,
+                pnl=pnl,
+                exit_price=exit_price,
+            )
             del self.open_positions[market_id]
         if closed:
             equity = self._paper_equity(prices)
