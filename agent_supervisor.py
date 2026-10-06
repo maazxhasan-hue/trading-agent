@@ -102,7 +102,7 @@ class AgentSupervisor:
             resolved=validation.get("resolved_forecasts", 0),
             pending=validation.get("pending_forecasts", 0),
             feed_status=data.get("feed", {}).get("status", "unknown"),
-            stale=data.get("feed", {}).get("stale", True),
+            stale=data.get("feed", {}).get("stale", False),
             rows=rows,
         )
 
