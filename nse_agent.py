@@ -4,8 +4,9 @@ Paper mode uses live broker quotes/historical candles but never submits orders.
 Live mode is separately gated, uses limit orders, intraday MIS by default, and
 keeps a hard daily loss/drawdown kill switch. No profitability is guaranteed.
 """
-import json, math, os, time
+import os, time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from dataclasses import dataclass
 
 from agent_learning import AgentLearningStore
@@ -40,6 +41,7 @@ class NSETradingCompany:
         self.daily_pnl=0.0
         self.day=datetime.now().date().isoformat()
         self.open_positions={}
+        self.traded_today=set()
         self.metrics_file=os.getenv("PAPER_METRICS_FILE","paper_metrics.json")
 
     @staticmethod
@@ -94,10 +96,14 @@ class NSETradingCompany:
 
     def paper_or_live(self,sig):
         m=sig.market
-        risk_cap=self.cash*MAX_POSITION
+        capital = self.execution.funds_available() if self.execution.enabled else self.cash
+        if capital is None or capital <= 0:
+            print("[risk] no available Zerodha equity margin; no order")
+            return
+        risk_cap=capital*MAX_POSITION
         risk_per_share=max(m.last_price*sig.stop_pct,0.05)
         qty=max(1,int(risk_cap/risk_per_share))
-        max_notional=self.cash*MAX_POSITION
+        max_notional=capital*MAX_POSITION
         qty=min(qty,max(1,int(max_notional/m.last_price)))
         if qty<=0:return
         side="BUY" if sig.direction>0 else "SELL"
@@ -105,15 +111,31 @@ class NSETradingCompany:
             price=m.last_price*(1+0.0005*sig.direction)
             try:
                 oid=self.execution.place_limit(OrderRequest(m.tradingsymbol,m.exchange,side,qty,price,os.getenv("ZERODHA_PRODUCT","MIS")))
+                self.open_positions[m.market_id] = {"order_id": oid, "side": side, "qty": qty}
+                self.traded_today.add(m.market_id)
                 print("[ZERODHA_ORDER]",oid,m.tradingsymbol,side,qty,price)
             except Exception as exc:
                 print("[zerodha execution blocked]",repr(exc))
         else:
+            self.open_positions[m.market_id] = {"side": side, "qty": qty, "entry": m.last_price}
+            self.traded_today.add(m.market_id)
             print("[PAPER_ORDER]",m.tradingsymbol,side,qty,m.last_price,"score=%.3f"%sig.score,"confidence=%.2f"%sig.confidence)
 
     def cycle(self):
         today=datetime.now().date().isoformat()
-        if today!=self.day:self.day=today;self.daily_pnl=0.0
+        if today!=self.day:
+            self.day=today
+            self.daily_pnl=0.0
+            self.traded_today.clear()
+        now_ist=datetime.now(ZoneInfo("Asia/Kolkata"))
+        if self.execution.enabled and (now_ist.hour > 15 or (now_ist.hour == 15 and now_ist.minute >= 15)):
+            try:
+                self.execution.exit_all_intraday()
+                self.open_positions.clear()
+                print("[zerodha] intraday exit window reached; positions squared off")
+            except Exception as exc:
+                print("[zerodha exit] recovered",repr(exc))
+            return
         print("\\n[%s] NSE scanning..."%datetime.now().isoformat(timespec="seconds"))
         markets=self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN","100")))
         prices={m.market_id:m.last_price for m in markets}
@@ -130,7 +152,7 @@ class NSETradingCompany:
                 votes=self.agent_votes(f)
                 self.learn(m,f,votes)
                 sig=self.signal(m,f,votes)
-                if sig and m.market_id not in self.open_positions:
+                if sig and m.market_id not in self.traded_today and m.market_id not in self.open_positions:
                     self.paper_or_live(sig)
             except Exception as exc:
                 print("[nse cycle recovered]",m.tradingsymbol,repr(exc))
