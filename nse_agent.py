@@ -14,6 +14,9 @@ from dataclasses import dataclass
 from agent_learning import AgentLearningStore
 from nse_market_data import NSEPublicFeed, NSEMarket
 from zerodha_adapter import ZerodhaExecution, ZerodhaLocked
+from nse_debate import NSEPreTradeDebate
+from nse_regime import classify as classify_regime
+from trade_journal import TradeJournal
 
 SCAN_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "300"))
 MIN_AGENTS = int(os.getenv("MIN_VALIDATED_AGENTS", "3"))
@@ -50,6 +53,11 @@ class NSETradingCompany:
                 "is not 'zerodha'. The free Yahoo provider is research/paper-only."
             )
         self.learning = AgentLearningStore(horizon_seconds=HORIZON)
+        self.debate = NSEPreTradeDebate(
+            min_agreement=float(os.getenv("DEBATE_MIN_AGREEMENT", "0.60")),
+            max_conflict=float(os.getenv("DEBATE_MAX_CONFLICT", "0.45")),
+        )
+        self.journal = TradeJournal()
         self.cash = float(os.getenv("PAPER_STARTING_CAPITAL", "100000"))
         self.peak = self.cash
         self.daily_pnl = 0.0
@@ -180,15 +188,29 @@ class NSETradingCompany:
         usable = [v for a, v in votes.items() if a in q and abs(v) > 0.05]
         if len(q) < MIN_AGENTS or len(usable) < MIN_AGENTS:
             return None
-        score = sum(usable) / len(usable)
-        conf = min(0.95, 0.55 + 0.40 * min(1, abs(score)))
-        if abs(score) < MIN_SCORE or conf < MIN_CONF:
+        regime = classify_regime(f)
+        debate = self.debate.run(f, votes, qualified)
+        self.journal.record(
+            "DEBATE",
+            symbol=market.tradingsymbol,
+            regime=regime.name,
+            decision=debate.decision,
+            agreement=debate.agreement,
+            conflict=debate.conflict,
+            score=debate.score,
+            challenges=debate.challenges,
+        )
+        if debate.decision == "NO_TRADE":
             return None
-        direction = 1 if score > 0 else -1
+        if regime.direction and debate.direction != regime.direction and regime.confidence >= 0.70:
+            self.journal.record("REGIME_BLOCK", symbol=market.tradingsymbol, regime=regime.name)
+            return None
+        if debate.score < MIN_SCORE or debate.confidence < MIN_CONF:
+            return None
         stop = max(0.003, min(0.02, 2.0 * f["vol"]))
         return Signal(
-            market, direction, abs(score), conf, stop,
-            "validated multi-agent NSE signal",
+            market, debate.direction, debate.score, debate.confidence, stop,
+            "debate-approved: " + debate.rationale,
         )
 
     def _paper_fill_price(self, price, side):
@@ -318,6 +340,16 @@ class NSETradingCompany:
         if qty <= 0:
             return
         side = "BUY" if sig.direction > 0 else "SELL"
+        self.journal.record(
+            "ORDER_INTENT",
+            symbol=m.tradingsymbol,
+            side=side,
+            quantity=qty,
+            reference_price=m.last_price,
+            score=sig.score,
+            confidence=sig.confidence,
+            reason=sig.reason,
+        )
         if self.execution.enabled:
             price = m.last_price * (1 + 0.0005 * sig.direction)
             try:
