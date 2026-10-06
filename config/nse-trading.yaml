@@ -1,8 +1,9 @@
 backend: zerodha_nse
 mode: paper
+market_data_provider: yahoo
 scan_interval_seconds: 300
 max_markets_per_scan: 100
-research_markets_per_cycle: 25
+research_markets_per_cycle: 10
 learning_horizon_seconds: 300
 min_validated_agents: 3
 min_confidence: 0.58
@@ -11,7 +12,7 @@ max_position_fraction: 0.06
 max_daily_loss_fraction: 0.03
 max_portfolio_drawdown_fraction: 0.10
 product: MIS
-interval: 5minute
+interval: 5m
 min_relative_move: 0.001
 live_execution: false
 live_execution_requires_arm: true
@@ -21,5 +22,5 @@ require_static_ip: true
 order_type: LIMIT
 max_order_slippage: 0.001
 
-# Leave empty to use liquid NSE EQ instruments from the live instrument dump.
-# For a controlled universe, set NSE_SYMBOLS=RELIANCE,INFY,HDFCBANK,...
+# Free mode uses Yahoo Finance research data and is paper-only.
+# Set NSE_SYMBOLS to the universe you want to scan.
