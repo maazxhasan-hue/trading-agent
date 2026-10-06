@@ -109,5 +109,26 @@ class TestFreeNSEPath(unittest.TestCase):
             else:
                 os.environ["NSE_MARKET_DATA_PROVIDER"] = old
 
+
+    def test_portfolio_exposure_cap_blocks_new_position(self):
+        from types import SimpleNamespace
+        from nse_agent import NSETradingCompany, Signal
+        company = NSETradingCompany.__new__(NSETradingCompany)
+        company.execution = SimpleNamespace(enabled=False)
+        company.cash = 100000.0
+        company.open_positions = {
+            "EXISTING": {"entry": 300.0, "qty": 100}
+        }
+        company.traded_today = set()
+        market = SimpleNamespace(
+            market_id="NEW",
+            tradingsymbol="NEW",
+            exchange="NSE",
+            last_price=100.0,
+        )
+        sig = Signal(market, 1, 0.8, 0.8, 0.01, "test")
+        company.paper_or_live(sig)
+        self.assertNotIn("NEW", company.open_positions)
+
 if __name__ == "__main__":
     unittest.main()
