@@ -412,7 +412,7 @@ class NSETradingCompany:
             if qty:
                 signed = qty if p.get("side") == "BUY" else -qty
                 key = p.get("tradingsymbol", p.get("market_id"))
-            local[key] = local.get(key, 0) + signed
+                local[key] = local.get(key, 0) + signed
         if set(local) != set(broker):
             self.journal.record("RECONCILIATION_FAILURE", local=local, broker=broker)
             return False
