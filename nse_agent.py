@@ -375,6 +375,8 @@ class NSETradingCompany:
         markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "1000")))
         print("[nse] market universe scanned=", len(markets))
         prices = {m.market_id: m.last_price for m in markets}
+        if not self.execution.enabled:
+            self.feed.prefetch_history(markets, days=10, interval=os.getenv("NSE_INTERVAL", "5m"))
 
         if today != self.day:
             if not self.execution.enabled and self.open_positions:
@@ -420,7 +422,7 @@ class NSETradingCompany:
         if (1 - equity / max(self.peak, 1)) >= MAX_DRAWDOWN:
             print("[risk] kill switch: portfolio drawdown limit")
             return
-        for m in markets[:int(os.getenv("NSE_RESEARCH_MARKETS_PER_CYCLE", "100"))]:
+        for m in markets[:int(os.getenv("NSE_RESEARCH_MARKETS_PER_CYCLE", "1000"))]:
             try:
                 f = self.features(m)
                 if not f:

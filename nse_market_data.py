@@ -234,6 +234,56 @@ class NSEPublicFeed:
         out.sort(key=lambda x: (x.volume, x.liquidity), reverse=True)
         return out
 
+    def prefetch_history(self, markets, days=10, interval=None):
+        """Batch-load research candles for an entire scan cycle."""
+        interval = interval or os.getenv("NSE_INTERVAL", "5m")
+        cache = {}
+        if self.provider != "yahoo":
+            for market in markets:
+                try:
+                    cache[market.market_id] = self.history(market, days=days, interval=interval)
+                except Exception as exc:
+                    print("[history recovered]", market.tradingsymbol, repr(exc))
+            self._history_cache = cache
+            return cache
+
+        if yf is None:
+            raise RuntimeError("Install yfinance for the free market-data provider.")
+        symbols = [m.tradingsymbol for m in markets]
+        for start in range(0, len(symbols), 100):
+            chunk = symbols[start:start + 100]
+            tickers = [self._yahoo_symbol(s) for s in chunk]
+            try:
+                data = yf.download(
+                    tickers=tickers, period="10d", interval=interval,
+                    auto_adjust=False, progress=False, threads=True,
+                    group_by="ticker",
+                )
+            except Exception as exc:
+                print("[yahoo history batch recovered]", start, repr(exc))
+                continue
+            for symbol in chunk:
+                ticker = self._yahoo_symbol(symbol)
+                try:
+                    frame = data[ticker] if len(chunk) > 1 else data
+                    frame = frame.dropna(subset=["Close"])
+                    rows = []
+                    for idx, row in frame.iterrows():
+                        rows.append({
+                            "date": idx.isoformat(),
+                            "open": float(row["Open"]),
+                            "high": float(row["High"]),
+                            "low": float(row["Low"]),
+                            "close": float(row["Close"]),
+                            "volume": float(row.get("Volume", 0) or 0),
+                        })
+                    if rows:
+                        cache[symbol] = rows
+                except (KeyError, TypeError, ValueError):
+                    continue
+        self._history_cache = cache
+        return cache
+
     def current_price(self, market_id):
         if self.provider == "yahoo":
             if yf is None:
@@ -264,6 +314,9 @@ class NSEPublicFeed:
         return float(q.get("last_price")) if q.get("last_price") else None
 
     def history(self, market, days=30, interval=None):
+        cached = getattr(self, "_history_cache", {}).get(market.market_id)
+        if cached is not None:
+            return cached
         interval = interval or os.getenv("NSE_INTERVAL", "5minute")
         if self.provider == "yahoo":
             if yf is None:
