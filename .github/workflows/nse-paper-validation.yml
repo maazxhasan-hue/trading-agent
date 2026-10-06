@@ -5,9 +5,11 @@ on:
     branches: ["main"]
   workflow_dispatch:
   schedule:
-    - cron: "*/5 9-14 * * 1-5"
+    - cron: "15-55/5 9 * * 1-5"
       timezone: "Asia/Kolkata"
-    - cron: "*/5 15 * * 1-5"
+    - cron: "*/5 10-14 * * 1-5"
+      timezone: "Asia/Kolkata"
+    - cron: "0-30/5 15 * * 1-5"
       timezone: "Asia/Kolkata"
 
 concurrency:
