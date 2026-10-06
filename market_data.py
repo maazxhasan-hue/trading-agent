@@ -275,7 +275,7 @@ def markets(max_markets=1000):
 
         raw_rows += len(rows)
         out.extend(rows)
-        if len(out) >= target or len(rows) < limit or not next_cursor:
+        if len(out) >= target or not next_cursor:
             break
         if next_cursor in seen_cursors:
             print("[feed] cursor repeated; stopping pagination")
