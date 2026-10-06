@@ -44,3 +44,10 @@ Only after the model qualification and paper validation gates are genuinely sati
 and a Zerodha-whitelisted static IP.
 
 The code deliberately refuses live execution when any of these conditions are missing.
+
+
+## Zero-cost market-data mode
+
+The repository can run NSE research and paper trading without buying Zerodha market-data access by setting `NSE_MARKET_DATA_PROVIDER=yahoo` and supplying an explicit `NSE_SYMBOLS` list. This mode is for research/paper use only; the system must not use third-party delayed/research data as the basis for live orders.
+
+Zerodha's Personal API is free for order/portfolio operations, while Zerodha's own live market-data and historical-candle APIs are part of the paid Connect plan. citeturn0search0turn0search1
