@@ -3,7 +3,9 @@ name: Continuous NSE Paper Validation
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 3-9 * * 1-5"
+    - cron: "*/5 9-14 * * 1-5"
+      timezone: "Asia/Kolkata"
+    - cron: "*/5 15 * * 1-5"
       timezone: "Asia/Kolkata"
 
 concurrency:
