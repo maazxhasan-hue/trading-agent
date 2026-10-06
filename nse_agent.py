@@ -233,6 +233,30 @@ class NSETradingCompany:
         for market_id, reason, pnl, price in closed:
             print("[PAPER_EXIT]", market_id, reason, "pnl=%.2f" % pnl, "price=%.2f" % price)
 
+    def _close_all_paper_positions(self, prices, reason="session_end"):
+        """Close all paper positions at the supplied session-end prices."""
+        closed = []
+        for market_id, position in list(self.open_positions.items()):
+            current = prices.get(market_id)
+            if current is None or current <= 0:
+                continue
+            signed = 1 if position["side"] == "BUY" else -1
+            exit_side = "SELL" if position["side"] == "BUY" else "BUY"
+            exit_price = self._paper_fill_price(current, exit_side)
+            pnl = signed * (exit_price - position["entry"]) * position["qty"]
+            self.realized_pnl += pnl
+            self.daily_realized_pnl += pnl
+            closed.append((market_id, reason, pnl, exit_price))
+            del self.open_positions[market_id]
+        if closed:
+            equity = self._paper_equity(prices)
+            self.daily_pnl = self.daily_realized_pnl
+            self.peak = max(self.peak, equity)
+            for market_id, why, pnl, price in closed:
+                print("[PAPER_SESSION_EXIT]", market_id, why,
+                      "pnl=%.2f" % pnl, "price=%.2f" % price)
+        return len(closed)
+
     def paper_metrics(self, prices=None):
         prices = prices or {}
         equity = self._paper_equity(prices)
@@ -295,15 +319,17 @@ class NSETradingCompany:
 
     def cycle(self):
         today = datetime.now().date().isoformat()
-        if today != self.day:
-            self.day = today
-            self.daily_pnl = 0.0
-            self.daily_realized_pnl = 0.0
-            self.traded_today.clear()
         now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
-        if self.execution.enabled and (
+        session_end = (
             now_ist.hour > 15 or (now_ist.hour == 15 and now_ist.minute >= 15)
-        ):
+        )
+
+        if session_end and not self.execution.enabled and not self.open_positions:
+            print("[paper] NSE session closed; no after-hours paper cycle.")
+            self._save_paper_state()
+            return
+
+        if self.execution.enabled and session_end:
             try:
                 self.execution.exit_all_intraday()
                 self.open_positions.clear()
@@ -311,12 +337,29 @@ class NSETradingCompany:
             except Exception as exc:
                 print("[zerodha exit] recovered", repr(exc))
             return
+
         print("\n[%s] NSE scanning..." % datetime.now().isoformat(timespec="seconds"))
         markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "100")))
         prices = {m.market_id: m.last_price for m in markets}
+
+        if today != self.day:
+            if not self.execution.enabled and self.open_positions:
+                self._close_all_paper_positions(prices, "new_session")
+            self.day = today
+            self.daily_pnl = 0.0
+            self.daily_realized_pnl = 0.0
+            self.traded_today.clear()
+
         self.paper_cycle += 1
         if not self.execution.enabled:
             self._mark_paper_positions(prices)
+
+        if session_end and not self.execution.enabled:
+            closed = self._close_all_paper_positions(prices, "session_end")
+            print("[paper] session close; positions_closed=", closed)
+            self._save_paper_state()
+            print("[paper]", self.paper_metrics(prices))
+            return
 
         if self.execution.enabled:
             if not self.feed.is_live_authorized_data:
