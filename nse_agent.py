@@ -21,6 +21,7 @@ MAX_DAILY_LOSS = float(os.getenv("MAX_DAILY_LOSS_FRACTION", "0.03"))
 MAX_DRAWDOWN = float(os.getenv("MAX_PORTFOLIO_DRAWDOWN_FRACTION", "0.10"))
 MIN_CONF = float(os.getenv("NSE_MIN_CONFIDENCE", "0.58"))
 MIN_SCORE = float(os.getenv("NSE_MIN_SCORE", "0.60"))
+MAX_LIVE_DATA_AGE = float(os.getenv("MAX_LIVE_DATA_AGE_SECONDS", "10"))
 HORIZON = int(os.getenv("AGENT_LEARNING_HORIZON_SECONDS", "300"))
 
 
@@ -198,6 +199,13 @@ class NSETradingCompany:
         print("\n[%s] NSE scanning..." % datetime.now().isoformat(timespec="seconds"))
         markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "100")))
         prices = {m.market_id: m.last_price for m in markets}
+
+        if self.execution.enabled:
+            if not self.feed.is_live_authorized_data:
+                raise ZerodhaLocked("Live execution requires an authorised market-data provider.")
+            stale = [m.tradingsymbol for m in markets if self.feed.freshness_seconds(m) > MAX_LIVE_DATA_AGE]
+            if stale:
+                raise ZerodhaLocked(f"Live execution blocked: market data is stale for {len(stale)} symbols.")
         resolved = self.learning.resolve(prices.get)
         qualified, _ = self.learning.qualified_agents(
             [
@@ -237,6 +245,7 @@ class NSETradingCompany:
         self.learning._save()
         print(
             "[nse] provider=", self.feed.provider,
+            "data_label=", self.feed.data_label,
             "free_data=", self.feed.is_free_data,
             "markets=", len(markets),
             "qualified=", len(qualified),
