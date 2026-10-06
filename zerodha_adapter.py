@@ -89,18 +89,20 @@ class ZerodhaExecution:
             raise ValueError("Invalid quantity/price")
         if request.transaction_type not in {"BUY", "SELL"}:
             raise ValueError("Invalid transaction type")
-        return self.client.place_order(
-            variety=self.client.VARIETY_REGULAR,
-            exchange=request.exchange,
-            tradingsymbol=request.tradingsymbol,
-            transaction_type=request.transaction_type,
-            quantity=int(request.quantity),
-            product=request.product,
-            order_type=self.client.ORDER_TYPE_LIMIT,
-            price=float(request.price),
-            validity=self.client.VALIDITY_DAY,
-            tag=request.tag,
-        )
+        kwargs = {
+            "variety": self.client.VARIETY_REGULAR,
+            "exchange": request.exchange,
+            "tradingsymbol": request.tradingsymbol,
+            "transaction_type": request.transaction_type,
+            "quantity": int(request.quantity),
+            "product": request.product,
+            "order_type": self.client.ORDER_TYPE_LIMIT,
+            "price": float(request.price),
+            "validity": self.client.VALIDITY_DAY,
+        }
+        if request.tag:
+            kwargs["tag"] = request.tag
+        return self.client.place_order(**kwargs)
 
     def funds_available(self):
         if not self.client:
