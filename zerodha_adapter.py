@@ -100,6 +100,16 @@ class ZerodhaExecution:
             validity=self.client.VALIDITY_DAY,
         )
 
+    def funds_available(self):
+        if not self.client:
+            return None
+        data = self.client.margins("equity")
+        available = data.get("available", {}) if isinstance(data, dict) else {}
+        for key in ("live_balance", "cash", "opening_balance"):
+            if available.get(key) is not None:
+                return float(available[key])
+        return None
+
     def orders(self):
         return self.client.orders() if self.client else []
 
