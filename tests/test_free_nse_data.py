@@ -81,6 +81,10 @@ class TestFreeNSEPath(unittest.TestCase):
                 self.assertEqual(company.open_positions, {})
                 self.assertGreater(company.realized_pnl, 0)
                 self.assertGreater(company.daily_realized_pnl, 0)
+                metrics = company.paper_metrics({"TCS": 101.0})
+                self.assertIn("gross_exposure_fraction", metrics)
+                self.assertIn("drawdown_fraction", metrics)
+                self.assertGreaterEqual(metrics["gross_notional"], 0)
         finally:
             for k, v in old.items():
                 if v is None: os.environ.pop(k, None)
