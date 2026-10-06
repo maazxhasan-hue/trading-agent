@@ -365,6 +365,7 @@ class NSETradingCompany:
                     raise OrderLifecycleError("broker returned no confirmed fill")
                 self.open_positions[m.market_id] = {
                     "market_id": m.market_id,
+                    "tradingsymbol": m.tradingsymbol,
                     "order_id": fill["order_id"],
                     "side": side,
                     "qty": filled,
@@ -410,14 +411,15 @@ class NSETradingCompany:
             qty = int(p.get("qty", 0) or 0)
             if qty:
                 signed = qty if p.get("side") == "BUY" else -qty
-                local[p.get("market_id")] = local.get(p.get("market_id"), 0) + signed
+                key = p.get("tradingsymbol", p.get("market_id"))
+            local[key] = local.get(key, 0) + signed
         if set(local) != set(broker):
             self.journal.record("RECONCILIATION_FAILURE", local=local, broker=broker)
             return False
         for symbol, qty in broker.items():
             local_qty = 0
             for p in self.open_positions.values():
-                if p.get("market_id") == symbol:
+                if p.get("tradingsymbol", p.get("market_id")) == symbol:
                     local_qty += int(p.get("qty", 0) or 0) * (1 if p.get("side") == "BUY" else -1)
             if local_qty != qty:
                 self.journal.record("RECONCILIATION_FAILURE", symbol=symbol, local=local_qty, broker=qty)
