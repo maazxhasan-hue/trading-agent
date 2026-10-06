@@ -11,8 +11,8 @@ The NSE engine is in `nse_agent.py`, market access is in `nse_market_data.py`, a
 ## Important runtime facts
 
 - Zerodha has no API sandbox. Keep `LIVE_TRADING=false` while the qualification dataset is being collected.
-- Kite Connect Personal is free for order/portfolio APIs but does not include real-time or historical data. The paid Connect plan provides live WebSocket and historical candle data. citeturn0search0
-- API order placement requires a whitelisted static IP under the current Zerodha rules. citeturn0search2
+- Kite Connect Personal is free for order/portfolio APIs but does not include real-time or historical data. The paid Connect plan provides live WebSocket and historical candle data.
+- API order placement requires a whitelisted static IP under the current Zerodha rules.
 - Live credentials belong in deployment secrets, never GitHub.
 - Access tokens are session credentials and must be refreshed according to Zerodha's login flow; `zerodha_auth.py` handles the request-token exchange.
 - The engine uses limit orders by default and intraday MIS by default. It does not claim guaranteed returns.
@@ -29,7 +29,7 @@ The NSE engine is in `nse_agent.py`, market access is in `nse_market_data.py`, a
 8. Start the service and allow the learning store to collect real NSE observations.
 9. Do not lower `LEARNING_MIN_SAMPLES=30` or the walk-forward gates to force a trade.
 
-Zerodha documents the developer signup/app creation flow and API credentials here. citeturn0search1
+Zerodha documents the developer signup/app creation flow and API credentials here.
 
 ## Live activation
 
