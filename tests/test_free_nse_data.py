@@ -90,5 +90,24 @@ class TestFreeNSEPath(unittest.TestCase):
                 if v is None: os.environ.pop(k, None)
                 else: os.environ[k] = v
 
+
+    def test_zerodha_freshness_fails_closed_without_timestamp(self):
+        import time
+        old = os.environ.get("NSE_MARKET_DATA_PROVIDER")
+        try:
+            os.environ["NSE_MARKET_DATA_PROVIDER"] = "zerodha"
+            feed = NSEPublicFeed.__new__(NSEPublicFeed)
+            feed.provider = "zerodha"
+            market = type("M", (), {"quote_timestamp": None})()
+            self.assertGreater(feed.freshness_seconds(market), 10**9)
+            market.quote_timestamp = time.time() - 3
+            self.assertGreaterEqual(feed.freshness_seconds(market), 2)
+            self.assertLess(feed.freshness_seconds(market), 6)
+        finally:
+            if old is None:
+                os.environ.pop("NSE_MARKET_DATA_PROVIDER", None)
+            else:
+                os.environ["NSE_MARKET_DATA_PROVIDER"] = old
+
 if __name__ == "__main__":
     unittest.main()

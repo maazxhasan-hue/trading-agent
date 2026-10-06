@@ -32,6 +32,7 @@ class NSEMarket:
     volume: float
     liquidity: float
     exchange: str = "NSE"
+    quote_timestamp: float | None = None
 
 
 class NSEPublicFeed:
@@ -65,7 +66,28 @@ class NSEPublicFeed:
         # delayed/research data from ever passing a live execution gate.
         if self.provider != "zerodha":
             return float("inf")
-        return 0.0
+        timestamp = getattr(market, "quote_timestamp", None)
+        if timestamp is None:
+            return float("inf")
+        age = time.time() - float(timestamp)
+        if age < 0:
+            return float("inf")
+        return age
+
+    @staticmethod
+    def _quote_timestamp(quote):
+        """Extract a Unix timestamp from a Zerodha quote, failing closed."""
+        for key in ("timestamp", "last_trade_time", "exchange_timestamp"):
+            value = quote.get(key) if isinstance(quote, dict) else None
+            if value is None:
+                continue
+            if isinstance(value, datetime):
+                return value.timestamp()
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return None
 
     def _load_instruments(self):
         if not self.broker.client:
@@ -183,6 +205,8 @@ class NSEPublicFeed:
                     lp,
                     float(q.get("volume") or 0),
                     buy + sell,
+                    "NSE",
+                    self._quote_timestamp(q),
                 )
             )
         out.sort(key=lambda x: (x.volume, x.liquidity), reverse=True)
