@@ -55,6 +55,7 @@ class NSETradingCompany:
         self.open_positions = {}
         self.traded_today = set()
         self.realized_pnl = 0.0
+        self.daily_realized_pnl = 0.0
         self.paper_cycle = 0
 
     @staticmethod
@@ -158,7 +159,7 @@ class NSETradingCompany:
 
     def _mark_paper_positions(self, prices):
         if not self.open_positions:
-            self.daily_pnl = self.realized_pnl
+            self.daily_pnl = self.daily_realized_pnl
             return
         closed = []
         for market_id, position in list(self.open_positions.items()):
@@ -179,10 +180,11 @@ class NSETradingCompany:
                 exit_price = self._paper_fill_price(current, "SELL" if position["side"] == "BUY" else "BUY")
                 pnl = signed * (exit_price - position["entry"]) * position["qty"]
                 self.realized_pnl += pnl
+                self.daily_realized_pnl += pnl
                 closed.append((market_id, reason, pnl, exit_price))
                 del self.open_positions[market_id]
         equity = self._paper_equity(prices)
-        self.daily_pnl = equity - self.cash
+        self.daily_pnl = self.daily_realized_pnl + unrealized if False else equity - self.cash - (self.realized_pnl - self.daily_realized_pnl)
         self.peak = max(self.peak, equity)
         for market_id, reason, pnl, price in closed:
             print("[PAPER_EXIT]", market_id, reason, "pnl=%.2f" % pnl, "price=%.2f" % price)
@@ -252,6 +254,7 @@ class NSETradingCompany:
         if today != self.day:
             self.day = today
             self.daily_pnl = 0.0
+            self.daily_realized_pnl = 0.0
             self.traded_today.clear()
         now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
         if self.execution.enabled and (
