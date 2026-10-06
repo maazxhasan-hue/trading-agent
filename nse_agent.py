@@ -184,7 +184,7 @@ class NSETradingCompany:
                 closed.append((market_id, reason, pnl, exit_price))
                 del self.open_positions[market_id]
         equity = self._paper_equity(prices)
-        self.daily_pnl = self.daily_realized_pnl + unrealized if False else equity - self.cash - (self.realized_pnl - self.daily_realized_pnl)
+        self.daily_pnl = self.daily_realized_pnl + (equity - self.cash - self.realized_pnl)
         self.peak = max(self.peak, equity)
         for market_id, reason, pnl, price in closed:
             print("[PAPER_EXIT]", market_id, reason, "pnl=%.2f" % pnl, "price=%.2f" % price)
