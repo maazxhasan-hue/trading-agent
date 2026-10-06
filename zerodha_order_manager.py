@@ -56,14 +56,23 @@ class ZerodhaOrderManager:
             self.execution.cancel(order_id)
         except Exception:
             pass
+        final=self._find(order_id)
+        if final:
+            filled=int(final.get("filled_quantity",0) or 0)
+            if filled>0:
+                result=self._result(final, allow_partial=True)
+                if self.journal:
+                    self.journal.record("ORDER_PARTIAL_FILL", order_id=order_id, filled_quantity=filled)
+                return result
         raise OrderLifecycleError(f"order {order_id} not confirmed filled before timeout")
 
-    def _result(self, order):
+    def _result(self, order, allow_partial=False):
         status=self._status(order)
         filled=int(order.get("filled_quantity",0) or 0)
-        pending=max(0,int(order.get("quantity",0) or 0)-filled)
-        if status!="COMPLETE" or filled<=0:
-            raise OrderLifecycleError(f"order {order.get('order_id')} not completely filled")
+        requested=int(order.get("quantity",0) or 0)
+        pending=max(0,requested-filled)
+        if filled<=0 or (status!="COMPLETE" and not allow_partial):
+            raise OrderLifecycleError(f"order {order.get('order_id')} not filled")
         return {
             "order_id":str(order.get("order_id")),
             "status":status,
