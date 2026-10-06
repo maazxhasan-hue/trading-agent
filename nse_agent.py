@@ -4,6 +4,7 @@ The default zero-cost mode uses Yahoo Finance research data and is PAPER-ONLY.
 Live Zerodha execution requires an authorised Zerodha data provider as well as
 the existing live-trading gates. No profitability is guaranteed.
 """
+import json
 import os
 import time
 from datetime import datetime
@@ -25,6 +26,7 @@ MAX_LIVE_DATA_AGE = float(os.getenv("MAX_LIVE_DATA_AGE_SECONDS", "10"))
 PAPER_TAKE_PROFIT_MULTIPLE = float(os.getenv("PAPER_TAKE_PROFIT_MULTIPLE", "2.0"))
 PAPER_MAX_HOLD_CYCLES = int(os.getenv("PAPER_MAX_HOLD_CYCLES", "12"))
 PAPER_SLIPPAGE_BPS = float(os.getenv("PAPER_SLIPPAGE_BPS", "5"))
+PAPER_STATE_FILE = os.getenv("PAPER_STATE_FILE", "data/nse_paper_state.json")
 HORIZON = int(os.getenv("AGENT_LEARNING_HORIZON_SECONDS", "300"))
 
 
@@ -57,6 +59,48 @@ class NSETradingCompany:
         self.realized_pnl = 0.0
         self.daily_realized_pnl = 0.0
         self.paper_cycle = 0
+        self._load_paper_state()
+
+    def _load_paper_state(self):
+        try:
+            if not os.path.exists(PAPER_STATE_FILE):
+                return
+            with open(PAPER_STATE_FILE, encoding="utf-8") as f:
+                state = json.load(f)
+            self.cash = float(state.get("cash", self.cash))
+            self.peak = float(state.get("peak", self.peak))
+            self.realized_pnl = float(state.get("realized_pnl", 0.0))
+            self.daily_realized_pnl = float(state.get("daily_realized_pnl", 0.0))
+            self.daily_pnl = float(state.get("daily_pnl", 0.0))
+            self.day = state.get("day", self.day)
+            self.open_positions = state.get("open_positions", {})
+            self.traded_today = set(state.get("traded_today", []))
+            self.paper_cycle = int(state.get("paper_cycle", 0))
+        except Exception as exc:
+            print("[paper state recovered]", repr(exc))
+
+    def _save_paper_state(self):
+        try:
+            parent = os.path.dirname(PAPER_STATE_FILE)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            tmp = PAPER_STATE_FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({
+                    "cash": self.cash,
+                    "peak": self.peak,
+                    "realized_pnl": self.realized_pnl,
+                    "daily_realized_pnl": self.daily_realized_pnl,
+                    "daily_pnl": self.daily_pnl,
+                    "day": self.day,
+                    "open_positions": self.open_positions,
+                    "traded_today": sorted(self.traded_today),
+                    "paper_cycle": self.paper_cycle,
+                    "updated_at": datetime.now().isoformat(),
+                }, f, indent=2)
+            os.replace(tmp, PAPER_STATE_FILE)
+        except Exception as exc:
+            print("[paper state save recovered]", repr(exc))
 
     @staticmethod
     def _returns(prices):
@@ -318,6 +362,8 @@ class NSETradingCompany:
             except Exception as exc:
                 print("[nse cycle recovered]", m.tradingsymbol, repr(exc))
         self.learning._save()
+        if not self.execution.enabled:
+            self._save_paper_state()
         if not self.execution.enabled:
             print("[paper]", self.paper_metrics(prices))
         print(
