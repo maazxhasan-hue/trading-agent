@@ -1,0 +1,30 @@
+name: Zerodha Read-Only Audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      KITE_API_KEY: ${{ secrets.KITE_API_KEY }}
+      KITE_ACCESS_TOKEN: ${{ secrets.KITE_ACCESS_TOKEN }}
+      LIVE_TRADING: "false"
+      CLOUD_RUNTIME: "false"
+      LIVE_RUNTIME_APPROVED: "false"
+      LIVE_TRADING_ARM: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Kite Connect
+        run: pip install "kiteconnect>=5.0.1,<6"
+      - name: Run read-only audit
+        run: python zerodha_readonly_audit.py
