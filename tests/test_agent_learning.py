@@ -132,9 +132,18 @@ class AgentLearningTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             store = AgentLearningStore(path=tmp + "/learning.json")
             store.data["agents"]["good"] = {
-                "forecasts": 30, "correct": 20, "incorrect": 10,
-                "brier_sum": 4.0, "last_updated": 1.0,
+                "forecasts": 30, "correct": 30, "incorrect": 0,
+                "brier_sum": 1.2, "last_updated": 1.0,
             }
+            for i in range(30):
+                store.data["history"].append({
+                    "created_at": float(i),
+                    "resolved_at": float(i + 1),
+                    "market_id": "m" + str(i),
+                    "outcome": 1,
+                    "confidence": 0.80,
+                    "directions": {"good": 1},
+                })
             qualified, details = store.qualified_agents(["good", "new"])
             self.assertEqual(qualified, ["good"])
             self.assertTrue(details["good"]["qualified"])
