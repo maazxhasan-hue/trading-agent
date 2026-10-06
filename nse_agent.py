@@ -22,6 +22,9 @@ MAX_DRAWDOWN = float(os.getenv("MAX_PORTFOLIO_DRAWDOWN_FRACTION", "0.10"))
 MIN_CONF = float(os.getenv("NSE_MIN_CONFIDENCE", "0.58"))
 MIN_SCORE = float(os.getenv("NSE_MIN_SCORE", "0.60"))
 MAX_LIVE_DATA_AGE = float(os.getenv("MAX_LIVE_DATA_AGE_SECONDS", "10"))
+PAPER_TAKE_PROFIT_MULTIPLE = float(os.getenv("PAPER_TAKE_PROFIT_MULTIPLE", "2.0"))
+PAPER_MAX_HOLD_CYCLES = int(os.getenv("PAPER_MAX_HOLD_CYCLES", "12"))
+PAPER_SLIPPAGE_BPS = float(os.getenv("PAPER_SLIPPAGE_BPS", "5"))
 HORIZON = int(os.getenv("AGENT_LEARNING_HORIZON_SECONDS", "300"))
 
 
@@ -51,6 +54,8 @@ class NSETradingCompany:
         self.day = datetime.now().date().isoformat()
         self.open_positions = {}
         self.traded_today = set()
+        self.realized_pnl = 0.0
+        self.paper_cycle = 0
 
     @staticmethod
     def _returns(prices):
@@ -139,6 +144,63 @@ class NSETradingCompany:
             "validated multi-agent NSE signal",
         )
 
+    def _paper_fill_price(self, price, side):
+        slip = PAPER_SLIPPAGE_BPS / 10000.0
+        return price * (1 + slip if side == "BUY" else 1 - slip)
+
+    def _paper_equity(self, prices):
+        equity = self.cash + self.realized_pnl
+        for position in self.open_positions.values():
+            current = prices.get(position["market_id"], position["entry"])
+            signed = 1 if position["side"] == "BUY" else -1
+            equity += signed * (current - position["entry"]) * position["qty"]
+        return equity
+
+    def _mark_paper_positions(self, prices):
+        if not self.open_positions:
+            self.daily_pnl = self.realized_pnl
+            return
+        closed = []
+        for market_id, position in list(self.open_positions.items()):
+            current = prices.get(market_id)
+            if current is None or current <= 0:
+                continue
+            signed = 1 if position["side"] == "BUY" else -1
+            move = signed * (current - position["entry"]) / position["entry"]
+            stop = position["stop_pct"]
+            reason = None
+            if move <= -stop:
+                reason = "stop"
+            elif move >= stop * PAPER_TAKE_PROFIT_MULTIPLE:
+                reason = "take_profit"
+            elif self.paper_cycle - position["entry_cycle"] >= PAPER_MAX_HOLD_CYCLES:
+                reason = "time_exit"
+            if reason:
+                exit_price = self._paper_fill_price(current, "SELL" if position["side"] == "BUY" else "BUY")
+                pnl = signed * (exit_price - position["entry"]) * position["qty"]
+                self.realized_pnl += pnl
+                closed.append((market_id, reason, pnl, exit_price))
+                del self.open_positions[market_id]
+        equity = self._paper_equity(prices)
+        self.daily_pnl = equity - self.cash
+        self.peak = max(self.peak, equity)
+        for market_id, reason, pnl, price in closed:
+            print("[PAPER_EXIT]", market_id, reason, "pnl=%.2f" % pnl, "price=%.2f" % price)
+
+    def paper_metrics(self, prices=None):
+        prices = prices or {}
+        equity = self._paper_equity(prices)
+        unrealized = equity - self.cash - self.realized_pnl
+        return {
+            "cash": round(self.cash, 2),
+            "equity": round(equity, 2),
+            "realized_pnl": round(self.realized_pnl, 2),
+            "unrealized_pnl": round(unrealized, 2),
+            "daily_pnl": round(self.daily_pnl, 2),
+            "open_positions": len(self.open_positions),
+            "peak_equity": round(self.peak, 2),
+        }
+
     def paper_or_live(self, sig):
         m = sig.market
         capital = self.execution.funds_available() if self.execution.enabled else self.cash
@@ -170,8 +232,14 @@ class NSETradingCompany:
             except Exception as exc:
                 print("[zerodha execution blocked]", repr(exc))
         else:
+            entry = self._paper_fill_price(m.last_price, side)
             self.open_positions[m.market_id] = {
-                "side": side, "qty": qty, "entry": m.last_price
+                "market_id": m.market_id,
+                "side": side,
+                "qty": qty,
+                "entry": entry,
+                "stop_pct": sig.stop_pct,
+                "entry_cycle": self.paper_cycle,
             }
             self.traded_today.add(m.market_id)
             print(
@@ -199,6 +267,9 @@ class NSETradingCompany:
         print("\n[%s] NSE scanning..." % datetime.now().isoformat(timespec="seconds"))
         markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "100")))
         prices = {m.market_id: m.last_price for m in markets}
+        self.paper_cycle += 1
+        if not self.execution.enabled:
+            self._mark_paper_positions(prices)
 
         if self.execution.enabled:
             if not self.feed.is_live_authorized_data:
@@ -221,8 +292,9 @@ class NSETradingCompany:
             "observations=", self.learning.observation_count(),
             "qualified=", len(qualified),
         )
+        equity = self._paper_equity(prices) if not self.execution.enabled else self.cash
         if self.daily_pnl <= -self.cash * MAX_DAILY_LOSS or (
-            1 - self.cash / max(self.peak, 1)
+            1 - equity / max(self.peak, 1)
         ) >= MAX_DRAWDOWN:
             print("[risk] kill switch: daily loss/drawdown limit")
             return
@@ -243,6 +315,8 @@ class NSETradingCompany:
             except Exception as exc:
                 print("[nse cycle recovered]", m.tradingsymbol, repr(exc))
         self.learning._save()
+        if not self.execution.enabled:
+            print("[paper]", self.paper_metrics(prices))
         print(
             "[nse] provider=", self.feed.provider,
             "data_label=", self.feed.data_label,
