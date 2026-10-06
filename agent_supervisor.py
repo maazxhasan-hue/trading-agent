@@ -108,17 +108,18 @@ class AgentSupervisor:
 
     def run_health_server(self):
         port = int(os.getenv("PORT", "8080"))
+        supervisor = self
 
         class HealthHandler(BaseHTTPRequestHandler):
             def do_GET(self):
                 if self.path in ("/", "/health", "/healthz"):
                     payload = {"status": "ok", "service": "trading-company"}
                 elif self.path == "/validation":
-                    payload = self.validation()
+                    payload = supervisor.validation()
                 elif self.path == "/metrics":
-                    payload = self.metrics()
+                    payload = supervisor.metrics()
                 elif self.path == "/dashboard":
-                    body = self.dashboard_html().encode("utf-8")
+                    body = supervisor.dashboard_html().encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")
                     self.send_header("Content-Length", str(len(body)))
