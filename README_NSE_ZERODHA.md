@@ -50,4 +50,4 @@ The code deliberately refuses live execution when any of these conditions are mi
 
 The repository can run NSE research and paper trading without buying Zerodha market-data access by setting `NSE_MARKET_DATA_PROVIDER=yahoo` and supplying an explicit `NSE_SYMBOLS` list. This mode is for research/paper use only; the system must not use third-party delayed/research data as the basis for live orders.
 
-Zerodha's Personal API is free for order/portfolio operations, while Zerodha's own live market-data and historical-candle APIs are part of the paid Connect plan. citeturn0search0turn0search1
+Zerodha's Personal API is free for order/portfolio operations, while Zerodha's own live market-data and historical-candle APIs are part of the paid Connect plan.
