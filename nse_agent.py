@@ -96,6 +96,8 @@ class NSETradingCompany:
                     "open_positions": self.open_positions,
                     "traded_today": sorted(self.traded_today),
                     "paper_cycle": self.paper_cycle,
+                    "learning": self.learning.summary(),
+                    "risk": self._paper_risk_snapshot(),
                     "updated_at": datetime.now().isoformat(),
                 }, f, indent=2)
             os.replace(tmp, PAPER_STATE_FILE)
@@ -257,10 +259,26 @@ class NSETradingCompany:
                       "pnl=%.2f" % pnl, "price=%.2f" % price)
         return len(closed)
 
+    def _paper_risk_snapshot(self, prices=None):
+        prices = prices or {}
+        gross_notional = 0.0
+        for position in self.open_positions.values():
+            current = prices.get(position.get("market_id"), position.get("entry", 0.0))
+            gross_notional += abs(float(current or 0.0) * float(position.get("qty", 0)))
+        equity = self._paper_equity(prices)
+        return {
+            "gross_notional": round(gross_notional, 2),
+            "gross_exposure_fraction": round(gross_notional / max(equity, 1.0), 6),
+            "open_positions": len(self.open_positions),
+            "drawdown_fraction": round(max(0.0, 1.0 - equity / max(self.peak, 1.0)), 6),
+            "daily_loss_fraction": round(max(0.0, -self.daily_pnl) / max(self.cash, 1.0), 6),
+        }
+
     def paper_metrics(self, prices=None):
         prices = prices or {}
         equity = self._paper_equity(prices)
         unrealized = equity - self.cash - self.realized_pnl
+        risk = self._paper_risk_snapshot(prices)
         return {
             "cash": round(self.cash, 2),
             "equity": round(equity, 2),
@@ -269,6 +287,9 @@ class NSETradingCompany:
             "daily_pnl": round(self.daily_pnl, 2),
             "open_positions": len(self.open_positions),
             "peak_equity": round(self.peak, 2),
+            "drawdown_fraction": risk["drawdown_fraction"],
+            "gross_notional": risk["gross_notional"],
+            "gross_exposure_fraction": risk["gross_exposure_fraction"],
         }
 
     def paper_or_live(self, sig):
