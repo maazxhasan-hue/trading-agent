@@ -222,6 +222,7 @@ class AngelOneExecution:
                 continue
             normalized.append({
                 "tradingsymbol": row.get("tradingsymbol"),
+                "symboltoken": str(row.get("symboltoken") or ""),
                 "exchange": row.get("exchange"),
                 "quantity": qty,
                 "product": row.get("producttype", "INTRADAY"),
