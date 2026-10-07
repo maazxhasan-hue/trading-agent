@@ -101,10 +101,13 @@ class AgentLearningStore:
         # every scan cycle while waiting for a meaningful outcome.
         bucket = int(now // max(1, self.horizon_seconds))
         market_key = str(market_id)
+        direction_key = tuple(sorted(directions))
         for item in self.data["pending"]:
+            existing_directions = tuple(sorted((item.get("directions") or {}).keys()))
             if (
                 str(item.get("market_id")) == market_key
                 and int(float(item.get("created_at", 0)) // max(1, self.horizon_seconds)) == bucket
+                and existing_directions == direction_key
             ):
                 return
 
