@@ -178,37 +178,53 @@ class NSETradingCompany:
         }
 
     def agent_votes(self, f):
+        # v3 uses bounded, regime-aware signals and deliberately avoids
+        # overconfident probabilities. The validation target is out-of-sample
+        # directional quality, not maximizing the raw signal magnitude.
+        trend_score = (
+            0.30 * f["r3"] + 0.30 * f["r10"] + 0.20 * f["r20"] + 0.20 * f["trend_gap"]
+        )
+        momentum = trend_score * (1.0 + 0.25 * min(2.0, f["volume_ratio"]))
+
+        stretch = abs(f["reversion"]) / max(f["vol"], 0.0005)
+        rsi_extreme = (f["rsi"] - 50.0) / 50.0
+        mean_reversion = (
+            -f["reversion"]
+            * min(1.75, 0.75 + 0.25 * stretch)
+            * (1.0 - min(0.40, abs(f["trend_gap"]) / max(f["vol"] * 8.0, 0.004)))
+            * (1.0 + 0.35 * abs(rsi_extreme))
+        )
+
+        breakout_signal = f["breakout"] if f["breakout"] > 0 else f["breakdown"]
+        event = (
+            0.55 * breakout_signal
+            + 0.25 * (f["volume_ratio"] - 1.0) * (1 if breakout_signal >= 0 else -1)
+            + 0.20 * (f["range_ratio"] - 1.0) * (1 if f["r3"] >= 0 else -1)
+        )
+
+        relative_value = (
+            0.45 * (f["r3"] - 0.25 * f["r20"])
+            + 0.30 * (f["r10"] - f["r20"])
+            + 0.25 * f["trend_gap"]
+        )
+
         votes = {
-            "momentum-v2": (
-                0.30 * f["r3"] + 0.35 * f["r10"] + 0.35 * f["trend_gap"]
-            ),
-            "mean_reversion-v2": (
-                -f["reversion"]
-                * (1.0 + min(1.0, abs(f["rsi"] - 50.0) / 25.0))
-                * (1.0 - min(0.50, abs(f["trend_gap"]) / max(f["vol"] * 6.0, 0.003)))
-            ),
-            "event_driven-v2": (
-                0.45 * (f["breakout"] if f["breakout"] > 0 else f["breakdown"])
-                + 0.30 * (f["volume_ratio"] - 1.0)
-                + 0.25 * (f["range_ratio"] - 1.0) * (1 if f["r3"] >= 0 else -1)
-            ),
-            "cross_market_arbitrage-v2": (
-                0.50 * (f["r3"] - 0.35 * f["r20"])
-                + 0.25 * f["trend_gap"]
-                + 0.25 * (f["volume_ratio"] - 1.0)
-            ),
+            "momentum-v3": momentum,
+            "mean_reversion-v3": mean_reversion,
+            "event_driven-v3": event,
+            "cross_market_arbitrage-v3": relative_value,
         }
         return {
-            k: max(-1.0, min(1.0, v / max(f["vol"] * 4, 0.002)))
+            k: max(-1.0, min(1.0, v / max(f["vol"] * 5.0, 0.0025)))
             for k, v in votes.items()
         }
 
     def learn(self, market, f, votes):
         self.learning.record_observation(market.market_id, f["price"], save=False)
-        conf = min(
-            0.95,
-            0.55 + 0.35 * min(1.0, abs(sum(votes.values())) / max(1, len(votes))),
-        )
+        # Calibrated confidence reduces Brier-score distortion from overly
+        # strong raw votes. It is intentionally capped below 0.70.
+        mean_strength = sum(abs(v) for v in votes.values()) / max(1, len(votes))
+        conf = min(0.68, 0.54 + 0.14 * mean_strength)
         edge = sum(votes.values()) / max(1, len(votes)) * f["vol"]
         self.learning.record_forecast(
             market.market_id,
