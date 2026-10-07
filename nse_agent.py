@@ -559,10 +559,10 @@ class NSETradingCompany:
         resolved = self.learning.resolve(prices.get)
         qualified, _ = self.learning.qualified_agents(
             [
-                "momentum-v2",
-                "mean_reversion-v2",
-                "event_driven-v2",
-                "cross_market_arbitrage-v2",
+                "momentum-v3",
+                "mean_reversion-v3",
+                "event_driven-v3",
+                "cross_market_arbitrage-v3",
             ]
         )
         print(
