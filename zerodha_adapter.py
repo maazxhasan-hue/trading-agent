@@ -1,6 +1,6 @@
 """Production Zerodha Kite Connect adapter.
 
-Live orders are opt-in and remain disabled until all runtime gates pass.
+Supports read-only market-data access and separately gated live execution.
 Credentials are read only from environment variables; never commit them.
 """
 import os
@@ -30,24 +30,28 @@ class OrderRequest:
 class ZerodhaExecution:
     def __init__(self):
         self.enabled = os.getenv("LIVE_TRADING", "false").lower() == "true"
+        self.readonly = os.getenv("KITE_READONLY", "false").lower() == "true"
         self.armed = os.getenv("LIVE_TRADING_ARM") == "I_UNDERSTAND_LIVE_TRADING"
         self.api_key = os.getenv("KITE_API_KEY", "")
         self.access_token = os.getenv("KITE_ACCESS_TOKEN", "")
         self.client = None
         if self.enabled:
-            self._connect()
+            self._connect(live=True)
+        elif self.readonly:
+            self._connect(live=False)
 
-    def _connect(self):
-        if not self.armed:
-            raise ZerodhaLocked("LIVE_TRADING=true requires LIVE_TRADING_ARM.")
-        if os.getenv("CLOUD_RUNTIME", "false").lower() != "true":
-            raise ZerodhaLocked("Live Zerodha execution is allowed only in the cloud runtime.")
-        if os.getenv("LIVE_RUNTIME_APPROVED", "false").lower() != "true":
-            raise ZerodhaLocked("LIVE_RUNTIME_APPROVED=true is required for live execution.")
+    def _connect(self, live):
+        if live:
+            if not self.armed:
+                raise ZerodhaLocked("LIVE_TRADING=true requires LIVE_TRADING_ARM.")
+            if os.getenv("CLOUD_RUNTIME", "false").lower() != "true":
+                raise ZerodhaLocked("Live Zerodha execution is allowed only in the cloud runtime.")
+            if os.getenv("LIVE_RUNTIME_APPROVED", "false").lower() != "true":
+                raise ZerodhaLocked("LIVE_RUNTIME_APPROVED=true is required for live execution.")
         if not self.api_key or not self.access_token:
             raise ZerodhaLocked("KITE_API_KEY and KITE_ACCESS_TOKEN are required.")
         if KiteConnect is None:
-            raise ZerodhaLocked("Install kiteconnect before enabling live execution.")
+            raise ZerodhaLocked("Install kiteconnect before enabling Zerodha access.")
         self.client = KiteConnect(api_key=self.api_key)
         self.client.set_access_token(self.access_token)
         self.client.profile()
@@ -56,6 +60,7 @@ class ZerodhaExecution:
         return {
             "broker": "zerodha",
             "live_enabled": self.enabled,
+            "readonly": self.readonly,
             "armed": self.armed,
             "cloud_runtime": os.getenv("CLOUD_RUNTIME", "false").lower() == "true",
             "live_runtime_approved": os.getenv("LIVE_RUNTIME_APPROVED", "false").lower() == "true",
@@ -63,17 +68,13 @@ class ZerodhaExecution:
         }
 
     def instruments(self, exchange="NSE"):
-        if self.client is None:
-            return []
-        return self.client.instruments(exchange)
+        return self.client.instruments(exchange) if self.client else []
 
     def quote(self, instruments):
-        if self.client is None:
-            return {}
-        return self.client.quote(instruments)
+        return self.client.quote(instruments) if self.client else {}
 
     def historical(self, instrument_token, from_date, to_date, interval="5minute"):
-        if self.client is None:
+        if not self.client:
             return []
         return self.client.historical_data(
             instrument_token=int(instrument_token),
@@ -83,7 +84,7 @@ class ZerodhaExecution:
         )
 
     def place_limit(self, request: OrderRequest):
-        if self.client is None:
+        if self.client is None or not self.enabled:
             raise ZerodhaLocked("Live execution is disabled; use paper mode.")
         if request.quantity <= 0 or request.price <= 0:
             raise ValueError("Invalid quantity/price")
@@ -104,10 +105,11 @@ class ZerodhaExecution:
             kwargs["tag"] = request.tag
         return self.client.place_order(**kwargs)
 
-    def funds_available(self):
+    def funds_available(self, exchange="NSE"):
         if not self.client:
             return None
-        data = self.client.margins("equity")
+        segment = "commodity" if exchange == "MCX" else "equity"
+        data = self.client.margins(segment)
         available = data.get("available", {}) if isinstance(data, dict) else {}
         for key in ("live_balance", "cash", "opening_balance"):
             if available.get(key) is not None:
@@ -125,19 +127,20 @@ class ZerodhaExecution:
             return None
         return self.client.cancel_order(variety=self.client.VARIETY_REGULAR, order_id=order_id)
 
-    def exit_all_intraday(self):
-        if not self.client:
+    def exit_all_intraday(self, exchange=None):
+        if not self.client or not self.enabled:
             return []
+        exchange = exchange or os.getenv("TRADING_EXCHANGE", "NSE")
         positions = self.client.positions().get("day", [])
-        results=[]
+        results = []
         for p in positions:
-            qty=int(p.get("quantity", 0))
-            if qty == 0 or p.get("exchange") != "NSE":
+            qty = int(p.get("quantity", 0))
+            if qty == 0 or p.get("exchange") != exchange:
                 continue
-            side=self.client.TRANSACTION_TYPE_SELL if qty > 0 else self.client.TRANSACTION_TYPE_BUY
+            side = self.client.TRANSACTION_TYPE_SELL if qty > 0 else self.client.TRANSACTION_TYPE_BUY
             results.append(self.client.place_order(
                 variety=self.client.VARIETY_REGULAR,
-                exchange=p["exchange"],
+                exchange=exchange,
                 tradingsymbol=p["tradingsymbol"],
                 transaction_type=side,
                 quantity=abs(qty),

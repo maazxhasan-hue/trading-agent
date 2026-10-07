@@ -14,6 +14,10 @@ from dataclasses import dataclass
 
 from agent_learning import AgentLearningStore
 from nse_market_data import NSEPublicFeed, NSEMarket
+try:
+    from mcx_market_data import MCXPublicFeed
+except ImportError:
+    MCXPublicFeed = None
 from zerodha_adapter import ZerodhaExecution, ZerodhaLocked
 from nse_debate import NSEPreTradeDebate
 from nse_regime import classify as classify_regime
@@ -31,7 +35,7 @@ MAX_LIVE_DATA_AGE = float(os.getenv("MAX_LIVE_DATA_AGE_SECONDS", "10"))
 PAPER_TAKE_PROFIT_MULTIPLE = float(os.getenv("PAPER_TAKE_PROFIT_MULTIPLE", "2.0"))
 PAPER_MAX_HOLD_CYCLES = int(os.getenv("PAPER_MAX_HOLD_CYCLES", "12"))
 PAPER_SLIPPAGE_BPS = float(os.getenv("PAPER_SLIPPAGE_BPS", "5"))
-PAPER_STATE_FILE = os.getenv("PAPER_STATE_FILE", "data/nse_paper_state.json")
+PAPER_STATE_FILE = os.getenv("PAPER_STATE_FILE", "data/mcx_paper_state.json" if os.getenv("TRADING_BACKEND","").lower()=="mcx" else "data/nse_paper_state.json")
 HORIZON = int(os.getenv("AGENT_LEARNING_HORIZON_SECONDS", "300"))
 
 
@@ -47,13 +51,11 @@ class Signal:
 
 class NSETradingCompany:
     def __init__(self):
-        self.feed = NSEPublicFeed()
+        backend = os.getenv("TRADING_BACKEND", "zerodha_nse").lower()
+        self.feed = MCXPublicFeed() if backend == "mcx" else NSEPublicFeed()
         self.execution = ZerodhaExecution()
         if self.execution.enabled and not self.feed.is_live_authorized_data:
-            raise ZerodhaLocked(
-                "Live Zerodha execution is blocked when NSE_MARKET_DATA_PROVIDER "
-                "is not 'zerodha'. The free Yahoo provider is research/paper-only."
-            )
+            raise ZerodhaLocked("Live Zerodha execution requires an authorised market-data provider.")
         self.learning = AgentLearningStore(horizon_seconds=HORIZON)
         self.debate = NSEPreTradeDebate(
             min_agreement=float(os.getenv("DEBATE_MIN_AGREEMENT", "0.60")),
@@ -125,7 +127,7 @@ class NSETradingCompany:
 
     def features(self, market):
         rows = self.feed.history(
-            market, days=2, interval=os.getenv("NSE_INTERVAL", "5m")
+            market, days=2, interval=os.getenv("MARKET_INTERVAL", os.getenv("NSE_INTERVAL", "5m"))
         )
         closes = [float(r["close"]) for r in rows if r.get("close")]
         vols = [float(r.get("volume", 0)) for r in rows]
@@ -386,13 +388,15 @@ class NSETradingCompany:
 
     def paper_or_live(self, sig):
         m = sig.market
-        capital = self.execution.funds_available() if self.execution.enabled else self.cash
+        capital = self.execution.funds_available(getattr(m, "exchange", "NSE")) if self.execution.enabled else self.cash
         if capital is None or capital <= 0:
             print("[risk] no available Zerodha equity margin; no order")
             return
         risk_cap = capital * MAX_POSITION
-        risk_per_share = max(m.last_price * sig.stop_pct, 0.05)
-        qty = max(1, int(risk_cap / risk_per_share))
+        risk_per_unit = max(m.last_price * sig.stop_pct, 0.05)
+        lot_size = max(1, int(getattr(m, "lot_size", 1) or 1))
+        raw_qty = int(risk_cap / risk_per_unit)
+        qty = (raw_qty // lot_size) * lot_size
 
         # Enforce a portfolio-wide exposure ceiling in addition to the
         # per-position cap.
@@ -407,6 +411,7 @@ class NSETradingCompany:
 
         max_notional = min(capital * MAX_POSITION, remaining_notional)
         qty = min(qty, int(max_notional / m.last_price))
+        qty = (qty // lot_size) * lot_size
         if qty <= 0:
             return
         side = "BUY" if sig.direction > 0 else "SELL"
@@ -424,7 +429,7 @@ class NSETradingCompany:
             price = m.last_price * (1 + 0.0005 * sig.direction)
             try:
                 raw_intent = f"{self.paper_cycle}:{m.market_id}:{side}:{qty}"
-                intent_id = "nse-" + hashlib.sha256(raw_intent.encode()).hexdigest()[:12]
+                intent_id = ("mcx-" if m.exchange == "MCX" else "nse-") + hashlib.sha256(raw_intent.encode()).hexdigest()[:12]
                 request = __import__("zerodha_adapter").OrderRequest(
                     m.tradingsymbol, m.exchange, side, qty, price,
                     os.getenv("ZERODHA_PRODUCT", "MIS"), intent_id,
@@ -472,7 +477,7 @@ class NSETradingCompany:
         broker_positions = self.execution.positions().get("day", [])
         broker = {}
         for p in broker_positions:
-            if p.get("exchange") != "NSE":
+            if p.get("exchange") != getattr(self.feed, "exchange", os.getenv("TRADING_EXCHANGE", "NSE")):
                 continue
             qty = int(p.get("quantity", 0) or 0)
             if qty:
@@ -506,9 +511,9 @@ class NSETradingCompany:
             raise ZerodhaLocked("Broker/local position reconciliation failed; new trading is blocked.")
         today = datetime.now().date().isoformat()
         now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
-        session_end = (
-            now_ist.hour > 15 or (now_ist.hour == 15 and now_ist.minute >= 15)
-        )
+        session_end_hour = int(os.getenv("MARKET_SESSION_END_HOUR", "23" if os.getenv("TRADING_BACKEND","").lower()=="mcx" else "15"))
+        session_end_minute = int(os.getenv("MARKET_SESSION_END_MINUTE", "20" if os.getenv("TRADING_BACKEND","").lower()=="mcx" else "15"))
+        session_end = (now_ist.hour > session_end_hour or (now_ist.hour == session_end_hour and now_ist.minute >= session_end_minute))
 
         if session_end and not self.execution.enabled and not self.open_positions:
             print("[paper] NSE session closed; no after-hours paper cycle.")
@@ -517,7 +522,7 @@ class NSETradingCompany:
 
         if self.execution.enabled and session_end:
             try:
-                self.execution.exit_all_intraday()
+                self.execution.exit_all_intraday(getattr(self.feed, "exchange", os.getenv("TRADING_EXCHANGE", "NSE")))
                 self.open_positions.clear()
                 print("[zerodha] intraday exit window reached; positions squared off")
             except Exception as exc:
@@ -526,10 +531,10 @@ class NSETradingCompany:
 
         print("\n[%s] NSE scanning..." % datetime.now().isoformat(timespec="seconds"))
         markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "1000")))
-        print("[nse] market universe scanned=", len(markets))
+        print("[market] market universe scanned=", len(markets))
         prices = {m.market_id: m.last_price for m in markets}
         if not self.execution.enabled:
-            self.feed.prefetch_history(markets, days=2, interval=os.getenv("NSE_INTERVAL", "5m"))
+            self.feed.prefetch_history(markets, days=2, interval=os.getenv("MARKET_INTERVAL", os.getenv("NSE_INTERVAL", "5m")))
 
         if today != self.day:
             if not self.execution.enabled and self.open_positions:
@@ -575,7 +580,7 @@ class NSETradingCompany:
         if (1 - equity / max(self.peak, 1)) >= MAX_DRAWDOWN:
             print("[risk] kill switch: portfolio drawdown limit")
             return
-        for m in markets[:int(os.getenv("NSE_RESEARCH_MARKETS_PER_CYCLE", "1000"))]:
+        for m in markets[:int(os.getenv("MARKETS_PER_CYCLE", os.getenv("NSE_RESEARCH_MARKETS_PER_CYCLE", "1000")))]:
             try:
                 f = self.features(m)
                 if not f:

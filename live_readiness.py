@@ -9,7 +9,7 @@ import os
 
 
 def audit() -> dict:
-    provider = os.getenv("NSE_MARKET_DATA_PROVIDER", "yahoo").lower()
+    provider = os.getenv("MCX_MARKET_DATA_PROVIDER", "yahoo").lower()
     live = os.getenv("LIVE_TRADING", "false").lower() == "true"
     armed = os.getenv("LIVE_TRADING_ARM") == "I_UNDERSTAND_LIVE_TRADING"
     cloud = os.getenv("CLOUD_RUNTIME", "false").lower() == "true"
@@ -29,7 +29,7 @@ def audit() -> dict:
 
     blockers = []
     if provider != "zerodha":
-        blockers.append("Authorized Zerodha market-data provider is not configured.")
+        blockers.append("Authorized Zerodha MCX market-data provider is not configured.")
     if not cloud or not approved:
         blockers.append("Approved cloud runtime is not configured.")
     if not armed:
