@@ -23,6 +23,7 @@ class MCXMarket:
     liquidity: float
     exchange: str = "MCX"
     quote_timestamp: float | None = None
+    lot_size: int = 1
 
 
 class MCXPublicFeed:
@@ -127,6 +128,7 @@ class MCXPublicFeed:
                 volume=float(q.get("volume") or 0),
                 liquidity=float(q.get("depth", {}).get("buy", [{}])[0].get("quantity", 0) if isinstance(q.get("depth"), dict) else 0),
                 quote_timestamp=self._timestamp(q),
+                lot_size=max(1, int(r.get("lot_size") or 1)),
             ))
         return out
 
@@ -167,6 +169,7 @@ class MCXPublicFeed:
                     liquidity=val("Volume"),
                     exchange="MCX",
                     quote_timestamp=None,
+                    lot_size=1,
                 ))
             except Exception as exc:
                 print("[mcx yahoo recovered]", name, repr(exc))
