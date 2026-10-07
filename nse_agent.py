@@ -393,8 +393,10 @@ class NSETradingCompany:
             print("[risk] no available Zerodha equity margin; no order")
             return
         risk_cap = capital * MAX_POSITION
-        risk_per_share = max(m.last_price * sig.stop_pct, 0.05)
-        qty = max(1, int(risk_cap / risk_per_share))
+        risk_per_unit = max(m.last_price * sig.stop_pct, 0.05)
+        lot_size = max(1, int(getattr(m, "lot_size", 1) or 1))
+        raw_qty = int(risk_cap / risk_per_unit)
+        qty = (raw_qty // lot_size) * lot_size
 
         # Enforce a portfolio-wide exposure ceiling in addition to the
         # per-position cap.
@@ -409,6 +411,7 @@ class NSETradingCompany:
 
         max_notional = min(capital * MAX_POSITION, remaining_notional)
         qty = min(qty, int(max_notional / m.last_price))
+        qty = (qty // lot_size) * lot_size
         if qty <= 0:
             return
         side = "BUY" if sig.direction > 0 else "SELL"
