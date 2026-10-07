@@ -1,0 +1,66 @@
+name: Continuous MCX Paper Validation
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 3-17 * * 1-5"
+      timezone: "Asia/Kolkata"
+
+concurrency:
+  group: mcx-paper-validation
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  paper-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TRADING_BACKEND: "mcx"
+      LIVE_TRADING: "false"
+      LIVE_TRADING_ARM: ""
+      CLOUD_RUNTIME: "false"
+      LIVE_RUNTIME_APPROVED: "false"
+      MCX_MARKET_DATA_PROVIDER: "yahoo"
+      MARKET_INTERVAL: "5m"
+      MAX_MARKETS_PER_SCAN: "100"
+      MARKETS_PER_CYCLE: "100"
+      SCAN_INTERVAL_SECONDS: "300"
+      AGENT_LEARNING_FILE: "data/mcx_agent_learning.json"
+      PAPER_STATE_FILE: "data/mcx_paper_state.json"
+      PAPER_STARTING_CAPITAL: "100000"
+      PAPER_TAKE_PROFIT_MULTIPLE: "2.0"
+      PAPER_MAX_HOLD_CYCLES: "12"
+      PAPER_SLIPPAGE_BPS: "5"
+      MIN_VALIDATED_AGENTS: "3"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run one MCX paper scan
+        run: python -c "from mcx_agent import MCXTradingCompany; MCXTradingCompany().cycle()"
+      - name: Show MCX paper state
+        if: always()
+        run: |
+          if [ -f data/mcx_paper_state.json ]; then cat data/mcx_paper_state.json; else echo "No MCX paper state produced."; fi
+      - name: Upload MCX paper state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcx-paper-state-${{ github.run_id }}
+          path: data
+          if-no-files-found: warn
+          retention-days: 14
