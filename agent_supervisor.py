@@ -49,7 +49,7 @@ class AgentSupervisor:
             backend = os.getenv("TRADING_BACKEND", "polymarket").lower()
             path = os.getenv("AGENT_LEARNING_FILE", "/data/nse_agent_learning.json" if backend == "zerodha_nse" and os.path.isdir("/data") else ("nse_agent_learning.json" if backend == "zerodha_nse" else ("/data/agent_learning.json" if os.path.isdir("/data") else "agent_learning.json")))
             store = AgentLearningStore(path=path)
-            ids = (["momentum-v1","mean_reversion-v1","event_driven-v1","cross_market_arbitrage-v1"] if backend == "zerodha_nse" else ["momentum-v1","mean_reversion-v1","event_driven-v1","crypto_specialist-v1","x_social_research-v1","cross_market_arbitrage-v1"])
+            ids = (["momentum-v2","mean_reversion-v2","event_driven-v2","cross_market_arbitrage-v2"] if backend == "zerodha_nse" else ["momentum-v2","mean_reversion-v2","event_driven-v2","crypto_specialist-v1","x_social_research-v1","cross_market_arbitrage-v2"])
             qualified, details = store.qualified_agents(ids)
             return {"status":"qualified" if len(qualified) >= 3 else "collecting","qualified_count":len(qualified),"required":3,"qualified_agents":qualified,"resolved_forecasts":len(store.data.get("history",[])),"pending_forecasts":len(store.data.get("pending",[])),"observations":store.observation_count(),"agents":details,"live_trading_authorized":False}
         except Exception as exc:
