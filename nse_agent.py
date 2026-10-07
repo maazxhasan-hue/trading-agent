@@ -125,7 +125,7 @@ class NSETradingCompany:
 
     def features(self, market):
         rows = self.feed.history(
-            market, days=10, interval=os.getenv("NSE_INTERVAL", "5m")
+            market, days=2, interval=os.getenv("NSE_INTERVAL", "5m")
         )
         closes = [float(r["close"]) for r in rows if r.get("close")]
         vols = [float(r.get("volume", 0)) for r in rows]
@@ -134,32 +134,69 @@ class NSETradingCompany:
         rs = self._returns(closes[-120:])
         if len(rs) < 20:
             return None
+        r3 = closes[-1] / closes[-4] - 1
         r5 = closes[-1] / closes[-6] - 1
+        r10 = closes[-1] / closes[-11] - 1
         r20 = closes[-1] / closes[-21] - 1
         mean = sum(closes[-30:]) / 30
         reversion = (closes[-1] / mean) - 1
+        ema_fast = sum(closes[-10:]) / 10
+        ema_slow = sum(closes[-30:]) / 30
+        trend_gap = (ema_fast / max(ema_slow, 1e-12)) - 1
         avg_r = sum(rs[-30:]) / min(30, len(rs))
         vol = (sum((r - avg_r) ** 2 for r in rs[-30:]) / min(30, len(rs))) ** 0.5
         recent_vol = sum(vols[-10:]) / max(1, sum(vols[-40:-10]) / 30)
-        breakout = (
-            closes[-1] / max(closes[-21:-1]) - 1 if len(closes) >= 22 else 0
-        )
+        ranges = [
+            max(float(r.get("high", 0)) - float(r.get("low", 0)), 0.0)
+            for r in rows
+        ]
+        range_now = sum(ranges[-5:]) / max(1, len(ranges[-5:]))
+        range_base = sum(ranges[-30:-5]) / max(1, len(ranges[-30:-5]))
+        range_ratio = range_now / max(range_base, closes[-1] * 0.0005)
+        gains = [max(x, 0.0) for x in rs[-14:]]
+        losses = [max(-x, 0.0) for x in rs[-14:]]
+        avg_gain = sum(gains) / max(1, len(gains))
+        avg_loss = sum(losses) / max(1, len(losses))
+        rs_value = avg_gain / max(avg_loss, 1e-12)
+        rsi = 100.0 - (100.0 / (1.0 + rs_value))
+        breakout = closes[-1] / max(closes[-21:-1]) - 1 if len(closes) >= 22 else 0
+        breakdown = closes[-1] / min(closes[-21:-1]) - 1 if len(closes) >= 22 else 0
         return {
+            "r3": r3,
             "r5": r5,
+            "r10": r10,
             "r20": r20,
             "reversion": reversion,
+            "trend_gap": trend_gap,
             "vol": max(vol, 0.0005),
             "volume_ratio": recent_vol,
+            "range_ratio": range_ratio,
+            "rsi": rsi,
             "breakout": breakout,
+            "breakdown": breakdown,
             "price": closes[-1],
         }
 
     def agent_votes(self, f):
         votes = {
-            "momentum-v1": 0.55 * f["r5"] + 0.45 * f["r20"],
-            "mean_reversion-v1": -f["reversion"],
-            "event_driven-v1": 0.40 * f["breakout"] + 0.20 * (f["volume_ratio"] - 1),
-            "cross_market_arbitrage-v1": 0.50 * f["r20"] + 0.20 * (f["volume_ratio"] - 1),
+            "momentum-v2": (
+                0.30 * f["r3"] + 0.35 * f["r10"] + 0.35 * f["trend_gap"]
+            ),
+            "mean_reversion-v2": (
+                -f["reversion"]
+                * (1.0 + min(1.0, abs(f["rsi"] - 50.0) / 25.0))
+                * (1.0 - min(0.50, abs(f["trend_gap"]) / max(f["vol"] * 6.0, 0.003)))
+            ),
+            "event_driven-v2": (
+                0.45 * (f["breakout"] if f["breakout"] > 0 else -max(0.0, -f["breakdown"]))
+                + 0.30 * (f["volume_ratio"] - 1.0)
+                + 0.25 * (f["range_ratio"] - 1.0) * (1 if f["r3"] >= 0 else -1)
+            ),
+            "cross_market_arbitrage-v2": (
+                0.50 * (f["r3"] - 0.35 * f["r20"])
+                + 0.25 * f["trend_gap"]
+                + 0.25 * (f["volume_ratio"] - 1.0)
+            ),
         }
         return {
             k: max(-1.0, min(1.0, v / max(f["vol"] * 4, 0.002)))
@@ -506,10 +543,10 @@ class NSETradingCompany:
         resolved = self.learning.resolve(prices.get)
         qualified, _ = self.learning.qualified_agents(
             [
-                "momentum-v1",
-                "mean_reversion-v1",
-                "event_driven-v1",
-                "cross_market_arbitrage-v1",
+                "momentum-v2",
+                "mean_reversion-v2",
+                "event_driven-v2",
+                "cross_market_arbitrage-v2",
             ]
         )
         print(
