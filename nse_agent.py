@@ -160,7 +160,7 @@ class NSETradingCompany:
         rs_value = avg_gain / max(avg_loss, 1e-12)
         rsi = 100.0 - (100.0 / (1.0 + rs_value))
         breakout = closes[-1] / max(closes[-21:-1]) - 1 if len(closes) >= 22 else 0
-        breakdown = closes[-1] / min(closes[-21:-1]) - 1 if len(closes) >= 22 else 0
+        breakdown = min(0.0, closes[-1] / min(closes[-21:-1]) - 1) if len(closes) >= 22 else 0
         return {
             "r3": r3,
             "r5": r5,
@@ -188,7 +188,7 @@ class NSETradingCompany:
                 * (1.0 - min(0.50, abs(f["trend_gap"]) / max(f["vol"] * 6.0, 0.003)))
             ),
             "event_driven-v2": (
-                0.45 * (f["breakout"] if f["breakout"] > 0 else -max(0.0, -f["breakdown"]))
+                0.45 * (f["breakout"] if f["breakout"] > 0 else f["breakdown"])
                 + 0.30 * (f["volume_ratio"] - 1.0)
                 + 0.25 * (f["range_ratio"] - 1.0) * (1 if f["r3"] >= 0 else -1)
             ),
