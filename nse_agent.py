@@ -55,10 +55,11 @@ class Signal:
 class NSETradingCompany:
     def __init__(self):
         backend = os.getenv("TRADING_BACKEND", "zerodha_nse").lower()
+        self.backend = backend
         if backend == "mcx":
             self.feed = MCXPublicFeed()
             self.execution = ZerodhaExecution()
-        elif backend == "angelone_nse":
+        elif self.backend == "angelone_nse":
             self.feed = AngelOneNSEFeed()
             self.execution = AngelOneExecution()
         else:
