@@ -170,8 +170,11 @@ class AgentSupervisor:
 
     def run(self):
         self.run_health_server()
-        backend = os.getenv("TRADING_BACKEND", "polymarket").lower()
-        if backend == "zerodha_nse":
+        backend = os.getenv("TRADING_BACKEND", "mcx").lower()
+        if backend == "mcx":
+            from mcx_agent import MCXTradingCompany
+            company = MCXTradingCompany()
+        elif backend == "zerodha_nse":
             from nse_agent import NSETradingCompany
             company = NSETradingCompany()
         else:
