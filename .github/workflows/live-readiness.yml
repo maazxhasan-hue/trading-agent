@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 5
     env:
       LIVE_TRADING: "false"
-      NSE_MARKET_DATA_PROVIDER: "yahoo"
+      MCX_MARKET_DATA_PROVIDER: "yahoo"
       CLOUD_RUNTIME: "false"
       LIVE_RUNTIME_APPROVED: "false"
       LIVE_TRADING_ARM: ""
