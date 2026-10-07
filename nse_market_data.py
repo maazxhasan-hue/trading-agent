@@ -234,8 +234,8 @@ class NSEPublicFeed:
         out.sort(key=lambda x: (x.volume, x.liquidity), reverse=True)
         return out
 
-    def prefetch_history(self, markets, days=10, interval=None):
-        """Batch-load research candles for an entire scan cycle."""
+    def prefetch_history(self, markets, days=2, interval=None):
+        """Batch-load a bounded research window to keep low-memory runners stable."""
         interval = interval or os.getenv("NSE_INTERVAL", "5m")
         cache = {}
         if self.provider != "yahoo":
@@ -255,7 +255,7 @@ class NSEPublicFeed:
             tickers = [self._yahoo_symbol(s) for s in chunk]
             try:
                 data = yf.download(
-                    tickers=tickers, period="10d", interval=interval,
+                    tickers=tickers, period=f"{max(2, int(days))}d", interval=interval,
                     auto_adjust=False, progress=False, threads=True,
                     group_by="ticker",
                 )
