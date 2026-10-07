@@ -476,7 +476,7 @@ class NSETradingCompany:
         print("[nse] market universe scanned=", len(markets))
         prices = {m.market_id: m.last_price for m in markets}
         if not self.execution.enabled:
-            self.feed.prefetch_history(markets, days=10, interval=os.getenv("NSE_INTERVAL", "5m"))
+            self.feed.prefetch_history(markets, days=2, interval=os.getenv("NSE_INTERVAL", "5m"))
 
         if today != self.day:
             if not self.execution.enabled and self.open_positions:
