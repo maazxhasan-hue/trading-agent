@@ -30,12 +30,7 @@ function event(id,text,move=true){
 }
 
 function applySnapshot(x){
-  const label=x.symbol||"MARKET";
-  const f=x.features||{};
-  const v=x.votes||{};
-  const decision=x.decision?(" → "+x.decision):"";
-  const parts=Object.entries(f).slice(0,6).map(([k,val])=>k+"="+val).join(" ");
-  event(x.agent||"research",label+" evidence: "+parts+decision,false);
+  S.evidence=x;
   if($("debate")&&x.debate)$("debate").textContent=x.debate;
 }
 
