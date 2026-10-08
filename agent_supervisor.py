@@ -11,7 +11,7 @@ from agent_research_tools import AgentResearchTools
 
 AGENTS = [
     "orchestrator","market-scanner","fair-value","momentum","mean-reversion",
-    "event-driven","crypto-specialist","x-social-research",
+    "event-driven","mcx-commodity-specialist","x-social-research",
     "cross-market-arbitrage","bull","bear","quant","news-social",
     "red-team","risk","portfolio","execution","post-trade","agent-health",
     "treasury","audit",
@@ -60,7 +60,7 @@ class AgentSupervisor:
             from agent_learning import AgentLearningStore
             backend = os.getenv("TRADING_BACKEND", "mcx").lower()
             store = AgentLearningStore(path=self._learning_path(backend))
-            ids = ["momentum-v3", "mean_reversion-v3", "event_driven-v3", "cross_market_arbitrage-v3"]
+            ids = ["momentum-v3", "mean_reversion-v3", "event_driven-v3", "mcx_commodity_specialist-v3", "cross_market_arbitrage-v3"]
             qualified, details = store.qualified_agents(ids)
             return {
                 "status": "qualified" if len(qualified) >= 3 else "collecting",
