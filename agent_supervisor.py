@@ -90,7 +90,11 @@ class AgentSupervisor:
                 with open(metrics_path, encoding="utf-8") as f:
                     raw = json.load(f)
                     paper = raw if isinstance(raw, dict) else {}
-            feed_status = (\n                "angelone_mcx" if backend in {"mcx", "angelone_mcx"} else\n                "angelone_nse" if backend == "angelone_nse" else\n                "zerodha_quote" if backend == "zerodha_nse" else "unknown"\n            )
+            feed_status = (
+                "angelone_mcx" if backend in {"mcx", "angelone_mcx"} else
+                "angelone_nse" if backend == "angelone_nse" else
+                "zerodha_quote" if backend == "zerodha_nse" else "unknown"
+            )
             return {
                 "backend": backend,
                 "feed": {"status": feed_status},
