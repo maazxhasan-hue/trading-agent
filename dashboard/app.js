@@ -1,5 +1,5 @@
 const AGENTS={momentum:"Momentum",mean_reversion:"Mean Reversion",event_driven:"Event Driven",mcx:"MCX Specialist",arbitrage:"Cross-Market",research:"Research",bull:"Bull",bear:"Bear",quant:"Quant",news:"News/Social",redteam:"Red Team",risk:"Risk",chief:"Chief"};
-const S={events:[],status:{},markets:{GOLD:"—",SILVER:"—",CRUDEOIL:"—",NATURALGAS:"—",COPPER:"—"},live:false,evidence:null,portfolio:null,trades:[]};
+const S={events:[],status:{},markets:{GOLD:"—",SILVER:"—",CRUDEOIL:"—",NATURALGAS:"—",COPPER:"—"},quotes:{},live:false,evidence:null,portfolio:null,trades:[],candles:{},learning:null,activeMarket:null};
 Object.keys(AGENTS).forEach(k=>S.status[k]="MONITORING");
 const $=id=>document.getElementById(id);
 
@@ -9,7 +9,13 @@ function render(){
     const st=S.status[k]||"MONITORING";
     return '<div class="row"><span>'+n+'</span><span class="pill '+(st!=="IDLE"?"good":"")+'">'+st+"</span></div>";
   }).join("");
-  $("markets").innerHTML=Object.entries(S.markets).map(([k,v])=>'<div class="row"><span>'+k+"</span><span>"+v+"</span></div>").join("");
+  $("markets").innerHTML=Object.entries(S.markets).map(([k,v])=>{
+    const q=S.quotes[k]||{};
+    const age=q.quote_timestamp?Math.max(0,(Date.now()/1000)-Number(q.quote_timestamp)):null;
+    const freshness=age!==null&&isFinite(age)?age.toFixed(1)+"s":"research";
+    return '<div class="row market-row '+(S.activeMarket===k?"selected":"")+'" data-symbol="'+k+'"><span><b>'+k+'</b><small>'+((q.provider)||"engine feed")+'</small></span><span><b>'+v+'</b><small>'+freshness+'</small></span></div>';
+  }).join("");
+  document.querySelectorAll(".market-row").forEach(el=>el.onclick=()=>{S.activeMarket=el.dataset.symbol;renderCandlePanel();});
   if(S.portfolio){
     const p=S.portfolio;
     const pnlClass=Number(p.daily_pnl||0)>=0?"good":"bad";
@@ -25,6 +31,8 @@ function render(){
       '<div><small>Exposure</small><b>'+((Number(p.gross_exposure_fraction||0))*100).toFixed(2)+'%</b></div>'+
       '</div>';
   }
+  renderCandlePanel();
+  renderLearning();
   $("trades").innerHTML=S.trades.slice(-12).reverse().map(t=>{
     const pnl=t.pnl===undefined?"":' P&L ₹'+Number(t.pnl).toFixed(2);
     return '<div class="trade '+(t.action==="OPEN"?"open":"close")+'"><b>'+t.action+'</b> '+t.symbol+' '+t.side+' × '+t.quantity+' @ '+Number(t.price||0).toFixed(2)+pnl+'<small>'+(t.reason||("score "+Number(t.score||0).toFixed(2)))+'</small></div>';
@@ -133,6 +141,52 @@ function start24x7Patrol(){
   },12000);
 }
 
+function renderCandlePanel(){
+  const symbol=S.activeMarket||Object.keys(S.candles)[0]||Object.keys(S.markets)[0];
+  if(!symbol)return;
+  S.activeMarket=symbol;
+  const rows=S.candles[symbol]||[];
+  const q=S.quotes[symbol]||{};
+  const latest=rows[rows.length-1];
+  const price=q.value!==undefined?q.value:(latest?latest.close:null);
+  $("candle-symbol").textContent=symbol;
+  $("candle-provider").textContent=(q.provider||"engine feed")+" • "+(q.interval||"5m");
+  $("candle-price").textContent=price==null?"—":Number(price).toFixed(8);
+  $("candle-ohlc").textContent=latest
+    ? "O "+Number(latest.open).toFixed(4)+"  H "+Number(latest.high).toFixed(4)+"  L "+Number(latest.low).toFixed(4)+"  C "+Number(latest.close).toFixed(4)
+    : "Waiting for candle data…";
+  const svg=$("candle-chart");
+  if(!svg)return;
+  if(rows.length<2){svg.innerHTML='<text x="50%" y="50%" text-anchor="middle" class="chart-empty">Waiting for exact OHLC candles…</text>';return;}
+  const data=rows.slice(-60), W=900,H=300,pad=24;
+  const lo=Math.min(...data.map(x=>Number(x.low))), hi=Math.max(...data.map(x=>Number(x.high)));
+  const span=Math.max(hi-lo,1e-9), slot=(W-pad*2)/data.length, body=Math.max(2,slot*.56);
+  const y=v=>pad+(hi-v)/span*(H-pad*2);
+  svg.innerHTML=data.map((d,i)=>{
+    const x=pad+i*slot+slot/2, o=y(Number(d.open)), cl=y(Number(d.close)), h=y(Number(d.high)), l=y(Number(d.low));
+    const up=Number(d.close)>=Number(d.open), top=Math.min(o,cl), bh=Math.max(2,Math.abs(cl-o));
+    const stamp=d.time?new Date(d.time).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"";
+    return '<g class="candle '+(up?"up":"down")+'"><title>'+stamp+' O '+d.open+' H '+d.high+' L '+d.low+' C '+d.close+'</title><line x1="'+x+'" y1="'+h+'" x2="'+x+'" y2="'+l+'"/><rect x="'+(x-body/2)+'" y="'+top+'" width="'+body+'" height="'+bh+'" rx="1"/></g>';
+  }).join("");
+}
+function renderLearning(){
+  const l=S.learning;
+  if(!l){$("learning").innerHTML='<div class="muted">Waiting for the learning engine…</div>';return;}
+  const names=Object.keys(l.details||{});
+  const rows=names.map(a=>{
+    const d=l.details[a]||{}, acc=d.accuracy==null?"—":(Number(d.accuracy)*100).toFixed(1)+"%";
+    const recent=d.recent_accuracy==null?"—":(Number(d.recent_accuracy)*100).toFixed(1)+"%";
+    const weight=d.weight===undefined?(d.forecasts>=30?((Number(d.accuracy)-.5)*1.2+1).toFixed(2):"1.00"):Number(d.weight).toFixed(2);
+    const delta=(Number(weight)-1);
+    const adaptation=delta>0.02?"boosted":delta<-0.02?"reduced":"baseline";
+    return '<div class="learning-row"><div><b>'+a.replace("-v3","")+'</b><small>'+((d.qualified?"QUALIFIED":"LEARNING")+" • "+(d.reason||"evaluating"))+'</small></div><div><span>'+d.forecasts+' forecasts</span><span>acc '+acc+'</span><span>recent '+recent+'</span><span>weight '+weight+' ('+adaptation+')</span></div></div>';
+  }).join("");
+  const last=(l.last_resolved||[]).slice(-4).reverse().map(x=>{
+    const move=x.realized_move==null?"":(Number(x.realized_move)*100).toFixed(3)+"%";
+    return '<div class="learn-event"><b>'+String(x.market_id||"market")+'</b> '+(Number(x.outcome)>0?"UP":Number(x.outcome)<0?"DOWN":"NEUTRAL")+' <small>'+move+'</small></div>';
+  }).join("");
+  $("learning").innerHTML='<div class="learning-head"><b>Intelligence & Adaptation</b><span>'+Number(l.observations||0)+' observations • '+Number(l.history||0)+' resolved • '+Number(l.resolved||0)+' new</span></div>'+rows+'<div class="learning-new"><b>What changed recently</b>'+ (last||'<div class="muted">No resolved learning updates yet.</div>')+'</div>';
+}
 function applySnapshot(x){
   S.evidence=x;
   if($("debate")&&x.debate)$("debate").textContent=x.debate;
@@ -149,7 +203,9 @@ function connect(){
     try{
       const x=JSON.parse(e.data);
       if(x.type==="status")Object.assign(S.status,x.status||{});
-      else if(x.type==="market")S.markets[x.symbol]=x.value;
+      else if(x.type==="market"){S.markets[x.symbol]=x.value;S.quotes[x.symbol]=x;if(!S.activeMarket)S.activeMarket=x.symbol;}
+      else if(x.type==="candles"){S.candles[x.symbol]=x.candles||[];S.activeMarket=S.activeMarket||x.symbol;}
+      else if(x.type==="learning")S.learning=x;
       else if(x.type==="portfolio")S.portfolio=x;
       else if(x.type==="trade"){S.trades.push(x);if(S.trades.length>100)S.trades.shift();}
       else if(x.type==="activity")event(x.agent,x.text,x.move!==false);
