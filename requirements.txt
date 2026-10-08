@@ -2,3 +2,5 @@ requests>=2.31.0
 py_clob_client_v2>=0.1.0
 kiteconnect>=5.0.1,<6
 yfinance>=0.2.66,<1
+smartapi-python>=1.5.5,<2
+pyotp>=2.9.0
