@@ -235,10 +235,55 @@ class NSETradingCompany:
             + 0.25 * f["trend_gap"]
         )
 
+        # MCX commodity specialist: deliberately different evidence from the
+        # generic technical agents. It emphasizes contract/commodity regime,
+        # volatility, liquidity, and trend-vs-stretch behavior. The signal is
+        # bounded and remains only one vote inside the independent debate.
+        specialist = 0.0
+        symbol = str(getattr(market, "tradingsymbol", "")).upper()
+        if self.backend in {"mcx", "angelone_mcx"}:
+            commodity = (
+                "GOLD" if "GOLD" in symbol else
+                "SILVER" if "SILVER" in symbol else
+                "CRUDE" if "CRUDE" in symbol else
+                "NATURALGAS" if "NATURALGAS" in symbol else
+                "COPPER" if "COPPER" in symbol else
+                "ZINC" if "ZINC" in symbol else
+                "OTHER"
+            )
+            # Precious metals favor trend persistence; energy favors breakout
+            # and volatility confirmation; industrial metals favor relative
+            # momentum plus volume confirmation.
+            if commodity in {"GOLD", "SILVER"}:
+                specialist = (
+                    0.40 * f["r20"] + 0.30 * f["trend_gap"]
+                    + 0.20 * f["r10"] + 0.10 * (f["volume_ratio"] - 1.0)
+                )
+            elif commodity in {"CRUDE", "NATURALGAS"}:
+                specialist = (
+                    0.30 * f["breakout"] + 0.25 * f["r10"]
+                    + 0.20 * f["range_ratio"] * (1 if f["r5"] >= 0 else -1)
+                    + 0.25 * (f["volume_ratio"] - 1.0)
+                )
+            else:
+                specialist = (
+                    0.35 * f["r10"] + 0.25 * f["r20"]
+                    + 0.20 * f["trend_gap"]
+                    + 0.20 * (f["volume_ratio"] - 1.0)
+                )
+
+            # Avoid chasing unusually stretched commodity moves.
+            stretch_penalty = min(
+                0.50,
+                max(0.0, abs(f["reversion"]) / max(f["vol"], 0.0005) - 2.0) * 0.08,
+            )
+            specialist -= (1 if specialist >= 0 else -1) * stretch_penalty
+
         votes = {
             "momentum-v3": momentum,
             "mean_reversion-v3": mean_reversion,
             "event_driven-v3": event,
+            "mcx_commodity_specialist-v3": specialist,
             "cross_market_arbitrage-v3": relative_value,
         }
         return {
@@ -604,6 +649,7 @@ class NSETradingCompany:
                 "momentum-v3",
                 "mean_reversion-v3",
                 "event_driven-v3",
+                "mcx_commodity_specialist-v3",
                 "cross_market_arbitrage-v3",
             ]
         )
