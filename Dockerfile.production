@@ -1,8 +1,10 @@
 # Production cloud runtime for unattended trading.
-# Keep LIVE_RUNTIME_APPROVED=false until all production readiness checks pass.
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY requirements-runtime.txt .
@@ -13,6 +15,7 @@ ENV CLOUD_RUNTIME=true
 ENV LIVE_RUNTIME_APPROVED=false
 ENV SCAN_INTERVAL_SECONDS=300
 ENV AGENT_WORKSPACE_ROOT=/data/agent_workspaces
+ENV AGENT_RUNTIME_AUDIT_FILE=/data/logs/agent_runtime_audit.jsonl
 ENV AGENT_HEALTH_FILE=/data/logs/agent_runtime_health.json
 ENV AGENT_LIFECYCLE_FILE=/data/agent_lifecycle.json
 ENV AGENT_CALIBRATION_FILE=/data/agent_calibration.json
@@ -26,11 +29,6 @@ ENV MIN_VALIDATED_AGENTS=3
 ENV POST_TRADE_FILE=/data/agent_health.json
 ENV TRADING_LOG_FILE=/data/paper_trades.csv
 ENV LIVE_PORTFOLIO_FILE=/data/live_portfolio.json
-ENV GAMMA_PAGE_SIZE=100
-ENV GAMMA_MIN_REQUEST_INTERVAL_SECONDS=2
-ENV GAMMA_REQUEST_RETRIES=3
-ENV GAMMA_BACKOFF_BASE_SECONDS=2
-ENV GAMMA_MAX_RETRY_WAIT_SECONDS=60
-ENV GAMMA_CACHE_MAX_AGE_SECONDS=900
-ENV GAMMA_MARKET_CACHE_FILE=/data/gamma_markets_cache.json
+ENV AGENT_BROWSER_HEADLESS=true
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 CMD ["python", "agent_supervisor.py"]
