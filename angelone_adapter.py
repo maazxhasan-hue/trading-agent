@@ -170,23 +170,35 @@ class AngelOneExecution:
             raise AngelOneLocked("ANGELONE_MARKET_DATA_MODE must be FULL or LTP.")
         for raw_token in tokens:
             token = str(raw_token)
-            result = self.client.getMarketData(mode, {exchange: [token]})
-            if not result or not result.get("status"):
-                raise AngelOneLocked(
-                    str((result or {}).get("message", "quote failed"))
+            try:
+                result = self.client.getMarketData(mode, {exchange: [token]})
+                if not result or not result.get("status"):
+                    raise AngelOneLocked(
+                        str((result or {}).get("message", "quote failed"))
+                    )
+                data = result.get("data") or {}
+                fetched = data.get("fetched", []) if isinstance(data, dict) else []
+                for row in fetched:
+                    row_token = str(
+                        row.get("symbolToken")
+                        or row.get("symboltoken")
+                        or token
+                    )
+                    out[row_token] = row
+            except Exception as exc:
+                # A single malformed/empty SmartAPI response must not terminate
+                # an entire MCX scan. The next cycle retries the token.
+                print(
+                    "[angelone quote recovered]",
+                    exchange,
+                    token,
+                    type(exc).__name__,
+                    str(exc),
                 )
-            data = result.get("data") or {}
-            fetched = data.get("fetched", []) if isinstance(data, dict) else []
-            for row in fetched:
-                row_token = str(
-                    row.get("symbolToken")
-                    or row.get("symboltoken")
-                    or token
-                )
-                out[row_token] = row
-            # SmartAPI currently documents one token/request and a 10 req/sec
-            # market-data limit. Stay comfortably below that limit.
-            time.sleep(float(os.getenv("ANGELONE_QUOTE_INTERVAL_SECONDS", "0.12")))
+            finally:
+                # SmartAPI currently documents one token/request and a 10 req/sec
+                # market-data limit. Stay comfortably below that limit.
+                time.sleep(float(os.getenv("ANGELONE_QUOTE_INTERVAL_SECONDS", "0.12")))
         return out
 
     def ltp(self, exchange, tradingsymbol, symboltoken):
