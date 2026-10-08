@@ -273,6 +273,10 @@ class AngelOneExecution:
             raise ValueError("Invalid quantity/price")
         if request.transaction_type not in {"BUY", "SELL"}:
             raise ValueError("Invalid transaction type")
+        if self.backend == "angelone_mcx" and request.exchange != "MCX":
+            raise AngelOneLocked("Angel One MCX backend refuses non-MCX orders.")
+        if self.backend == "angelone_mcx" and request.product not in {"CARRYFORWARD", "NRML"}:
+            raise AngelOneLocked("Angel One MCX futures require CARRYFORWARD/NRML product.")
         self._ensure_session()
         payload = {
             "variety": "NORMAL",
