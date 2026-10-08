@@ -1,5 +1,5 @@
 const AGENTS={momentum:"Momentum",mean_reversion:"Mean Reversion",event_driven:"Event Driven",mcx:"MCX Specialist",arbitrage:"Cross-Market",research:"Research",bull:"Bull",bear:"Bear",quant:"Quant",news:"News/Social",redteam:"Red Team",risk:"Risk",chief:"Chief"};
-const S={events:[],status:{},markets:{GOLD:"—",SILVER:"—",CRUDEOIL:"—",NATURALGAS:"—",COPPER:"—"},quotes:{},live:false,evidence:null,portfolio:null,trades:[],candles:{},learning:null,activeMarket:null};
+const S={events:[],status:{},analysis:[],markets:{GOLD:"—",SILVER:"—",CRUDEOIL:"—",NATURALGAS:"—",COPPER:"—"},quotes:{},live:false,evidence:null,portfolio:null,trades:[],candles:{},learning:null,activeMarket:null};
 Object.keys(AGENTS).forEach(k=>S.status[k]="MONITORING");
 const $=id=>document.getElementById(id);
 
@@ -33,6 +33,7 @@ function render(){
   }
   renderCandlePanel();
   renderLearning();
+  renderAnalysis();
   $("trades").innerHTML=S.trades.slice(-12).reverse().map(t=>{
     const pnl=t.pnl===undefined?"":' P&L ₹'+Number(t.pnl).toFixed(2);
     return '<div class="trade '+(t.action==="OPEN"?"open":"close")+'"><b>'+t.action+'</b> '+t.symbol+' '+t.side+' × '+t.quantity+' @ '+Number(t.price||0).toFixed(2)+pnl+'<small>'+(t.reason||("score "+Number(t.score||0).toFixed(2)))+'</small></div>';
@@ -171,6 +172,15 @@ function renderCandlePanel(){
     return '<g class="candle '+(up?"up":"down")+'"><title>'+stamp+' O '+d.open+' H '+d.high+' L '+d.low+' C '+d.close+'</title><line x1="'+x+'" y1="'+h+'" x2="'+x+'" y2="'+l+'"/><rect x="'+(x-body/2)+'" y="'+top+'" width="'+body+'" height="'+bh+'" rx="1"/></g>';
   }).join("");
 }
+function renderAnalysis(){
+  const box=$("analysis");
+  if(!box)return;
+  const rows=S.analysis.slice(-10).reverse().map(x=>{
+    const ev=(x.evidence||[]).slice(0,3).join(" • ");
+    return '<div class="analysis-card"><div class="analysis-top"><b>'+String(x.agent||"Agent")+'</b><span>'+String(x.symbol||"—")+'</span><span class="analysis-action">'+String(x.action||"ANALYZING")+'</span></div><div class="analysis-thesis">'+String(x.thesis||"Evaluating market evidence…")+'</div><div class="analysis-evidence">'+(ev||"No additional evidence reported")+'</div><small>confidence '+(x.confidence==null?"—":(Number(x.confidence)*100).toFixed(1)+"%")+' • adaptation '+String(x.adaptation||"baseline")+'</small></div>';
+  }).join("");
+  box.innerHTML=rows||'<div class="muted">Waiting for agent analysis…</div>';
+}
 function renderLearning(){
   const l=S.learning;
   if(!l){$("learning").innerHTML='<div class="muted">Waiting for the learning engine…</div>';return;}
@@ -208,6 +218,7 @@ function connect(){
       else if(x.type==="market"){S.markets[x.symbol]=x.value;S.quotes[x.symbol]=x;if(!S.activeMarket)S.activeMarket=x.symbol;}
       else if(x.type==="candles"){S.candles[x.symbol]=x.candles||[];S.activeMarket=S.activeMarket||x.symbol;}
       else if(x.type==="learning")S.learning=x;
+      else if(x.type==="agent_analysis"){S.analysis.push(x);if(S.analysis.length>100)S.analysis.shift();}
       else if(x.type==="portfolio")S.portfolio=x;
       else if(x.type==="trade"){S.trades.push(x);if(S.trades.length>100)S.trades.shift();}
       else if(x.type==="activity")event(x.agent,x.text,x.move!==false);
