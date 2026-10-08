@@ -80,6 +80,8 @@ class NSETradingCompany:
                 "Live execution requires an authorised market-data provider."
             )
         self.learning = AgentLearningStore(horizon_seconds=HORIZON)
+        self._feature_candles = {}
+        self._hq_candle_ids = set()
         self.debate = NSEPreTradeDebate(
             min_agreement=float(os.getenv("DEBATE_MIN_AGREEMENT", "0.60")),
             max_conflict=float(os.getenv("DEBATE_MAX_CONFLICT", "0.45")),
@@ -155,9 +157,9 @@ class NSETradingCompany:
         ]
 
     def features(self, market):
-        rows = self.feed.history(
-            market, days=2, interval=os.getenv("MARKET_INTERVAL", os.getenv("NSE_INTERVAL", "5m"))
-        )
+        interval = os.getenv("MARKET_INTERVAL", os.getenv("NSE_INTERVAL", "5m"))
+        rows = self.feed.history(market, days=2, interval=interval)
+        self._feature_candles[market.market_id] = rows[-120:]
         closes = [float(r["close"]) for r in rows if r.get("close")]
         vols = [float(r.get("volume", 0)) for r in rows]
         if len(closes) < 30:
@@ -327,7 +329,21 @@ class NSETradingCompany:
                 f"{market.tradingsymbol}: evaluating {label} ({vote:+.2f})",
                 move=True,
             )
-        hq_events.market(market.tradingsymbol, round(float(f["price"]), 4))
+        hq_events.market(
+            market.tradingsymbol,
+            round(float(market.last_price), 8),
+            provider=getattr(self.feed, "data_label", "unknown"),
+            free_data=bool(getattr(self.feed, "is_free_data", False)),
+            exchange=getattr(market, "exchange", None),
+            quote_timestamp=getattr(market, "quote_timestamp", None),
+        )
+        if market.market_id in self._hq_candle_ids:
+            hq_events.candles(
+                market.tradingsymbol,
+                self._feature_candles.get(market.market_id, []),
+                provider=getattr(self.feed, "data_label", "unknown"),
+                interval=os.getenv("MARKET_INTERVAL", os.getenv("NSE_INTERVAL", "5m")),
+            )
         hq_events.snapshot(market.tradingsymbol, f, votes)
 
     def signal(self, market, f, votes):
@@ -705,6 +721,8 @@ class NSETradingCompany:
         )
         print("\n[%s] %s scanning..." % (datetime.now().isoformat(timespec="seconds"), "MCX" if self.backend in {"mcx","angelone_mcx"} else "NSE"))
         markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "1000")))
+        self._hq_candle_ids = {m.market_id for m in markets[:int(os.getenv("HQ_CANDLE_PREVIEW_LIMIT", "5"))]}
+        self._feature_candles.clear()
         print("[market] market universe scanned=", len(markets))
         hq_events.activity("research", f"Scanned {len(markets)} markets", move=True)
         for market_item in markets[:int(os.getenv("HQ_MARKET_PREVIEW_LIMIT", "5"))]:
@@ -741,7 +759,7 @@ class NSETradingCompany:
             if stale:
                 raise ZerodhaLocked(f"Live execution blocked: market data is stale for {len(stale)} symbols.")
         resolved = self.learning.resolve(prices.get)
-        qualified, _ = self.learning.qualified_agents(
+        qualified, learning_details = self.learning.qualified_agents(
             [
                 "momentum-v3",
                 "mean_reversion-v3",
@@ -749,6 +767,26 @@ class NSETradingCompany:
                 "mcx_commodity_specialist-v3",
                 "cross_market_arbitrage-v3",
             ]
+        )
+        # Send the actual learning state to HQ: forecast counts, accuracy,
+        # Brier score, recent stability, qualification and adaptive weight.
+        last_resolved = []
+        for item in self.learning.data.get("history", [])[-20:]:
+            last_resolved.append({
+                "market_id": item.get("market_id"),
+                "outcome": item.get("outcome"),
+                "realized_move": item.get("realized_move"),
+                "resolved_at": item.get("resolved_at"),
+                "directions": item.get("directions", {}),
+            })
+        hq_events.learning(
+            qualified=qualified,
+            details=learning_details,
+            resolved=resolved,
+            history=len(self.learning.data["history"]),
+            observations=self.learning.observation_count(),
+            last_resolved=last_resolved,
+            horizon_seconds=HORIZON,
         )
         print(
             "[learning] resolved=", resolved,
