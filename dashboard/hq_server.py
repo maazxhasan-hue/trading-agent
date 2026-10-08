@@ -22,12 +22,14 @@ PORT = int(os.getenv("HQ_PORT", "8787"))
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def _headers(self, content_type: str) -> None:
+    def _headers(self, content_type: str, length: int | None = None) -> None:
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
         self.send_header("Access-Control-Allow-Origin", "*")
+        if length is not None:
+            self.send_header("Content-Length", str(length))
         self.end_headers()
 
     def do_GET(self) -> None:
@@ -37,7 +39,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/health":
             body = b'{"ok":true,"service":"trading-agent-hq"}'
-            self._headers("application/json; charset=utf-8")
+            self._headers("application/json; charset=utf-8", len(body))
             self.wfile.write(body)
             self.wfile.flush()
             return
@@ -58,8 +60,7 @@ class Handler(BaseHTTPRequestHandler):
             "application/octet-stream"
         )
         data = target.read_bytes()
-        self._headers(content_type)
-        self.send_header("Content-Length", str(len(data)))
+        self._headers(content_type, len(data))
         self.wfile.write(data)
         self.wfile.flush()
 
