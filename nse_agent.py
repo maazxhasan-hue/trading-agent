@@ -21,6 +21,10 @@ except ImportError:
 from zerodha_adapter import ZerodhaExecution, ZerodhaLocked
 from angelone_adapter import AngelOneExecution, AngelOneLocked
 from angelone_market_data import AngelOneNSEFeed
+try:
+    from angelone_mcx_market_data import AngelOneMCXFeed
+except ImportError:
+    AngelOneMCXFeed = None
 from nse_debate import NSEPreTradeDebate
 from nse_regime import classify as classify_regime
 from trade_journal import TradeJournal
@@ -59,6 +63,11 @@ class NSETradingCompany:
         if backend == "mcx":
             self.feed = MCXPublicFeed()
             self.execution = ZerodhaExecution()
+        elif self.backend == "angelone_mcx":
+            if AngelOneMCXFeed is None:
+                raise RuntimeError("Angel One MCX feed is unavailable.")
+            self.feed = AngelOneMCXFeed()
+            self.execution = AngelOneExecution()
         elif self.backend == "angelone_nse":
             self.feed = AngelOneNSEFeed()
             self.execution = AngelOneExecution()
@@ -75,7 +84,7 @@ class NSETradingCompany:
             max_conflict=float(os.getenv("DEBATE_MAX_CONFLICT", "0.45")),
         )
         self.journal = TradeJournal()
-        if backend == "angelone_nse":
+        if backend in {"angelone_nse", "angelone_mcx"}:
             self.order_manager = AngelOneOrderManager(self.execution, self.journal)
         else:
             self.order_manager = ZerodhaOrderManager(self.execution, self.journal)
@@ -446,7 +455,7 @@ class NSETradingCompany:
             try:
                 raw_intent = f"{self.paper_cycle}:{m.market_id}:{side}:{qty}"
                 intent_id = ("mcx-" if m.exchange == "MCX" else "nse-") + hashlib.sha256(raw_intent.encode()).hexdigest()[:12]
-                if backend == "angelone_nse":
+                if self.backend in {"angelone_nse", "angelone_mcx"}:
                     request = __import__("angelone_adapter").OrderRequest(
                         m.tradingsymbol,
                         str(m.instrument_token),
@@ -454,7 +463,7 @@ class NSETradingCompany:
                         side,
                         qty,
                         price,
-                        os.getenv("ANGELONE_PRODUCT", "INTRADAY"),
+                        os.getenv("ANGELONE_PRODUCT", "CARRYFORWARD" if self.backend == "angelone_mcx" else "INTRADAY"),
                         intent_id,
                     )
                 else:
@@ -478,10 +487,10 @@ class NSETradingCompany:
                     "entry_cycle": self.paper_cycle,
                 }
                 self.traded_today.add(m.market_id)
-                print("[ZERODHA_FILL]", fill)
+                print("[ANGELONE_FILL]" if self.backend in {"angelone_nse", "angelone_mcx"} else "[ZERODHA_FILL]", fill)
             except Exception as exc:
                 self.journal.record("ORDER_FAILURE", symbol=m.tradingsymbol, error=repr(exc))
-                print("[zerodha execution blocked]", repr(exc))
+                print("[angelone execution blocked]" if self.backend in {"angelone_nse", "angelone_mcx"} else "[zerodha execution blocked]", repr(exc))
         else:
             entry = self._paper_fill_price(m.last_price, side)
             self.open_positions[m.market_id] = {
@@ -539,12 +548,12 @@ class NSETradingCompany:
             raise ZerodhaLocked("Broker/local position reconciliation failed; new trading is blocked.")
         today = datetime.now().date().isoformat()
         now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
-        session_end_hour = int(os.getenv("MARKET_SESSION_END_HOUR", "23" if os.getenv("TRADING_BACKEND","").lower()=="mcx" else "15"))
-        session_end_minute = int(os.getenv("MARKET_SESSION_END_MINUTE", "20" if os.getenv("TRADING_BACKEND","").lower()=="mcx" else "15"))
+        session_end_hour = int(os.getenv("MARKET_SESSION_END_HOUR", "23" if os.getenv("TRADING_BACKEND","").lower() in {"mcx","angelone_mcx"} else "15"))
+        session_end_minute = int(os.getenv("MARKET_SESSION_END_MINUTE", "20" if os.getenv("TRADING_BACKEND","").lower() in {"mcx","angelone_mcx"} else "15"))
         session_end = (now_ist.hour > session_end_hour or (now_ist.hour == session_end_hour and now_ist.minute >= session_end_minute))
 
         if session_end and not self.execution.enabled and not self.open_positions:
-            print("[paper] NSE session closed; no after-hours paper cycle.")
+            print("[paper] MCX session closed; no after-hours paper cycle." if self.backend in {"mcx","angelone_mcx"} else "[paper] NSE session closed; no after-hours paper cycle.")
             self._save_paper_state()
             return
 
@@ -557,7 +566,7 @@ class NSETradingCompany:
                 print("[zerodha exit] recovered", repr(exc))
             return
 
-        print("\n[%s] NSE scanning..." % datetime.now().isoformat(timespec="seconds"))
+        print("\n[%s] %s scanning..." % (datetime.now().isoformat(timespec="seconds"), "MCX" if self.backend in {"mcx","angelone_mcx"} else "NSE"))
         markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "1000")))
         print("[market] market universe scanned=", len(markets))
         prices = {m.market_id: m.last_price for m in markets}

@@ -1,4 +1,4 @@
-"""Angel One SmartAPI execution adapter for the NSE engine.
+"""Angel One SmartAPI execution adapter for NSE and MCX.
 
 Credentials are read only from environment variables. Live order placement is
 fail-closed behind the existing cloud/arm gates. The adapter normalizes Angel
@@ -51,12 +51,13 @@ class AngelOneExecution:
 
     def __init__(self):
         backend = os.getenv("TRADING_BACKEND", "angelone_nse").lower()
+        self.backend = backend
         self.enabled = (
-            backend == "angelone_nse"
+            backend in {"angelone_nse", "angelone_mcx"}
             and os.getenv("LIVE_TRADING", "false").lower() == "true"
         )
         self.readonly = (
-            backend == "angelone_nse"
+            backend in {"angelone_nse", "angelone_mcx"}
             and os.getenv("ANGELONE_READONLY", "false").lower() == "true"
         )
         self.armed = os.getenv("LIVE_TRADING_ARM") == "I_UNDERSTAND_LIVE_TRADING"
@@ -117,7 +118,7 @@ class AngelOneExecution:
     def status(self):
         return {
             "broker": "angelone",
-            "backend": "angelone_nse",
+            "backend": self.backend,
             "live_enabled": self.enabled,
             "readonly": self.readonly,
             "armed": self.armed,
@@ -143,29 +144,39 @@ class AngelOneExecution:
                 "symboltoken": row.get("token"),
                 "instrument_token": row.get("token"),
                 "exchange": exchange,
-                "segment": "NSE" if row.get("exch_seg") == "NSE" else row.get("exch_seg"),
+                "segment": row.get("exch_seg"),
                 "instrument_type": row.get("instrumenttype"),
                 "lot_size": int(_num(row.get("lotsize"), 1) or 1),
+                "expiry": row.get("expiry"),
                 "name": row.get("name"),
             }
             for row in rows
-            if row.get("exch_seg") == "NSE" and row.get("symbol")
+            if row.get("exch_seg") == exchange and row.get("symbol")
         ]
 
-    def quote(self, tokens):
+    def quote(self, tokens, exchange="NSE"):
+        """Fetch FULL quotes, respecting SmartAPI's one-token-per-exchange request."""
         self._ensure_session()
-        token_list = [str(x) for x in tokens]
-        result = self.client.getMarketData("FULL", {"NSE": token_list})
-        if not result or not result.get("status"):
-            raise AngelOneLocked(str((result or {}).get("message", "quote failed")))
-        data = result.get("data") or {}
-        fetched = data.get("fetched", []) if isinstance(data, dict) else []
         out = {}
-        for row in fetched:
-            token = str(row.get("symbolToken") or row.get("symboltoken") or "")
-            if not token:
-                continue
-            out[token] = row
+        for raw_token in tokens:
+            token = str(raw_token)
+            result = self.client.getMarketData("FULL", {exchange: [token]})
+            if not result or not result.get("status"):
+                raise AngelOneLocked(
+                    str((result or {}).get("message", "quote failed"))
+                )
+            data = result.get("data") or {}
+            fetched = data.get("fetched", []) if isinstance(data, dict) else []
+            for row in fetched:
+                row_token = str(
+                    row.get("symbolToken")
+                    or row.get("symboltoken")
+                    or token
+                )
+                out[row_token] = row
+            # SmartAPI currently documents one token/request and a 10 req/sec
+            # market-data limit. Stay comfortably below that limit.
+            time.sleep(float(os.getenv("ANGELONE_QUOTE_INTERVAL_SECONDS", "0.12")))
         return out
 
     def ltp(self, exchange, tradingsymbol, symboltoken):
@@ -175,10 +186,10 @@ class AngelOneExecution:
             raise AngelOneLocked(str((result or {}).get("message", "LTP failed")))
         return result.get("data") or {}
 
-    def historical(self, symboltoken, from_date, to_date, interval="FIVE_MINUTE"):
+    def historical(self, symboltoken, from_date, to_date, interval="FIVE_MINUTE", exchange="NSE"):
         self._ensure_session()
         result = self.client.getCandleData({
-            "exchange": "NSE",
+            "exchange": exchange,
             "symboltoken": str(symboltoken),
             "interval": interval,
             "fromdate": from_date,
@@ -262,6 +273,10 @@ class AngelOneExecution:
             raise ValueError("Invalid quantity/price")
         if request.transaction_type not in {"BUY", "SELL"}:
             raise ValueError("Invalid transaction type")
+        if self.backend == "angelone_mcx" and request.exchange != "MCX":
+            raise AngelOneLocked("Angel One MCX backend refuses non-MCX orders.")
+        if self.backend == "angelone_mcx" and request.product not in {"CARRYFORWARD", "NRML"}:
+            raise AngelOneLocked("Angel One MCX futures require CARRYFORWARD/NRML product.")
         self._ensure_session()
         payload = {
             "variety": "NORMAL",
@@ -290,7 +305,8 @@ class AngelOneExecution:
         result = self.client.cancelOrder(str(order_id), "NORMAL")
         return result
 
-    def exit_all_intraday(self, exchange="NSE"):
+    def exit_all_intraday(self, exchange=None):
+        exchange = exchange or ("MCX" if self.backend == "angelone_mcx" else "NSE")
         if not self.enabled:
             return []
         self._ensure_session()

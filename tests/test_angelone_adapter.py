@@ -62,3 +62,44 @@ def test_order_normalization():
     assert normalized["order_id"] == "123"
     assert normalized["filled_quantity"] == 5
     assert normalized["average_price"] == 100.25
+
+
+def test_angel_one_mcx_defaults_to_paper_mode(monkeypatch):
+    monkeypatch.setenv("TRADING_BACKEND", "angelone_mcx")
+    monkeypatch.setenv("LIVE_TRADING", "false")
+    monkeypatch.delenv("ANGELONE_READONLY", raising=False)
+    broker = AngelOneExecution()
+    assert broker.enabled is False
+    assert broker.client is None
+    assert broker.status()["backend"] == "angelone_mcx"
+
+
+def test_mcx_exchange_is_explicit_in_requests():
+    import inspect
+    assert "exchange" in inspect.signature(AngelOneExecution.quote).parameters
+    assert "exchange" in inspect.signature(AngelOneExecution.historical).parameters
+
+
+def test_mcx_live_order_rejects_non_mcx_exchange():
+    broker = AngelOneExecution.__new__(AngelOneExecution)
+    broker.enabled = True
+    broker.armed = True
+    broker.cloud_runtime = True
+    broker.live_runtime_approved = True
+    broker.backend = "angelone_mcx"
+    broker.client = None
+    request = OrderRequest(
+        tradingsymbol="SBIN-EQ",
+        symboltoken="3045",
+        exchange="NSE",
+        transaction_type="BUY",
+        quantity=1,
+        price=100.0,
+        product="CARRYFORWARD",
+    )
+    try:
+        broker.place_limit(request)
+    except AngelOneLocked as exc:
+        assert "refuses non-MCX" in str(exc)
+    else:
+        raise AssertionError("MCX backend must reject non-MCX orders")
