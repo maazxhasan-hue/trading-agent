@@ -155,19 +155,28 @@ class AngelOneExecution:
         ]
 
     def quote(self, tokens, exchange="NSE"):
+        """Fetch FULL quotes, respecting SmartAPI's one-token-per-exchange request."""
         self._ensure_session()
-        token_list = [str(x) for x in tokens]
-        result = self.client.getMarketData("FULL", {exchange: token_list})
-        if not result or not result.get("status"):
-            raise AngelOneLocked(str((result or {}).get("message", "quote failed")))
-        data = result.get("data") or {}
-        fetched = data.get("fetched", []) if isinstance(data, dict) else []
         out = {}
-        for row in fetched:
-            token = str(row.get("symbolToken") or row.get("symboltoken") or "")
-            if not token:
-                continue
-            out[token] = row
+        for raw_token in tokens:
+            token = str(raw_token)
+            result = self.client.getMarketData("FULL", {exchange: [token]})
+            if not result or not result.get("status"):
+                raise AngelOneLocked(
+                    str((result or {}).get("message", "quote failed"))
+                )
+            data = result.get("data") or {}
+            fetched = data.get("fetched", []) if isinstance(data, dict) else []
+            for row in fetched:
+                row_token = str(
+                    row.get("symbolToken")
+                    or row.get("symboltoken")
+                    or token
+                )
+                out[row_token] = row
+            # SmartAPI currently documents one token/request and a 10 req/sec
+            # market-data limit. Stay comfortably below that limit.
+            time.sleep(float(os.getenv("ANGELONE_QUOTE_INTERVAL_SECONDS", "0.12")))
         return out
 
     def ltp(self, exchange, tradingsymbol, symboltoken):
