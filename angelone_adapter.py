@@ -147,6 +147,7 @@ class AngelOneExecution:
                 "segment": row.get("exch_seg"),
                 "instrument_type": row.get("instrumenttype"),
                 "lot_size": int(_num(row.get("lotsize"), 1) or 1),
+                "expiry": row.get("expiry"),
                 "name": row.get("name"),
             }
             for row in rows
