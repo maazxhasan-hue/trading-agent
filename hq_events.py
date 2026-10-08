@@ -80,6 +80,13 @@ def candles(symbol: str, rows, provider=None, interval=None, **extra) -> None:
     emit("candles", symbol=symbol, candles=safe, provider=provider, interval=interval, **extra)
 
 
+def agent_analysis(agent: str, symbol: str, thesis: str, evidence=None, action=None,
+                   confidence=None, adaptation=None, **extra) -> None:
+    emit("agent_analysis", agent=agent, symbol=symbol, thesis=thesis,
+         evidence=evidence or [], action=action, confidence=confidence,
+         adaptation=adaptation, **extra)
+
+
 def learning(symbol=None, qualified=None, details=None, resolved=0, history=0,
              observations=0, last_resolved=None, **extra) -> None:
     emit(
