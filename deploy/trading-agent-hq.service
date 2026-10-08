@@ -1,0 +1,18 @@
+[Unit]
+Description=Trading Agent HQ Live Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/trading-agent
+Environment=PYTHONUNBUFFERED=1
+Environment=HQ_HOST=127.0.0.1
+Environment=HQ_PORT=8787
+ExecStart=/opt/trading-agent/.venv/bin/python -u /opt/trading-agent/dashboard/hq_server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
