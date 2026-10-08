@@ -98,6 +98,7 @@ class NSETradingCompany:
         self.realized_pnl = 0.0
         self.daily_realized_pnl = 0.0
         self.paper_cycle = 0
+        self.total_paper_trades = 0
         self._load_paper_state()
 
     def _load_paper_state(self):
