@@ -8,7 +8,7 @@ The engine publishes events when it actually:
 - scans the market
 - computes feature evidence
 - receives each strategy vote
-- enters the Bull/Bear/Quant/News discussion
+- runs the actual specialist debate and records challenges
 - runs Red Team and Risk/Chief decision flow
 - opens/closes a paper position
 - updates learning
