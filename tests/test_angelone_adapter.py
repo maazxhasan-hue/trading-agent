@@ -78,3 +78,28 @@ def test_mcx_exchange_is_explicit_in_requests():
     import inspect
     assert "exchange" in inspect.signature(AngelOneExecution.quote).parameters
     assert "exchange" in inspect.signature(AngelOneExecution.historical).parameters
+
+
+def test_mcx_live_order_rejects_non_mcx_exchange():
+    broker = AngelOneExecution.__new__(AngelOneExecution)
+    broker.enabled = True
+    broker.armed = True
+    broker.cloud_runtime = True
+    broker.live_runtime_approved = True
+    broker.backend = "angelone_mcx"
+    broker.client = None
+    request = OrderRequest(
+        tradingsymbol="SBIN-EQ",
+        symboltoken="3045",
+        exchange="NSE",
+        transaction_type="BUY",
+        quantity=1,
+        price=100.0,
+        product="CARRYFORWARD",
+    )
+    try:
+        broker.place_limit(request)
+    except AngelOneLocked as exc:
+        assert "refuses non-MCX" in str(exc)
+    else:
+        raise AssertionError("MCX backend must reject non-MCX orders")
