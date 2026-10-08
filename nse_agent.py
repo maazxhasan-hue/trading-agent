@@ -789,7 +789,9 @@ class NSETradingCompany:
         if not self.execution.enabled:
             self._save_paper_state()
         if not self.execution.enabled:
-            print("[paper]", self.paper_metrics(prices))
+            metrics = self.paper_metrics(prices)
+            hq_events.emit("portfolio", **metrics)
+            print("[paper]", metrics)
         hq_events.status(
             momentum="IDLE",
             mean_reversion="IDLE",
