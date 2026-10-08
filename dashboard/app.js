@@ -1,11 +1,14 @@
 const AGENTS={momentum:"Momentum",mean_reversion:"Mean Reversion",event_driven:"Event Driven",mcx:"MCX Specialist",arbitrage:"Cross-Market",research:"Research",bull:"Bull",bear:"Bear",quant:"Quant",news:"News/Social",redteam:"Red Team",risk:"Risk",chief:"Chief"};
 const S={events:[],status:{},markets:{GOLD:"—",SILVER:"—",CRUDEOIL:"—",NATURALGAS:"—",COPPER:"—"},live:false,evidence:null,portfolio:null,trades:[]};
-Object.keys(AGENTS).forEach(k=>S.status[k]="IDLE");
+Object.keys(AGENTS).forEach(k=>S.status[k]="MONITORING");
 const $=id=>document.getElementById(id);
 
 function render(){
   $("clock").textContent=new Date().toLocaleTimeString();
-  $("agents").innerHTML=Object.entries(AGENTS).map(([k,n])=>'<div class="row"><span>'+n+'</span><span class="pill '+(S.status[k]==="WORKING"?"good":"")+'">'+S.status[k]+"</span></div>").join("");
+  $("agents").innerHTML=Object.entries(AGENTS).map(([k,n])=>{
+    const st=S.status[k]||"MONITORING";
+    return '<div class="row"><span>'+n+'</span><span class="pill '+(st!=="IDLE"?"good":"")+'">'+st+"</span></div>";
+  }).join("");
   $("markets").innerHTML=Object.entries(S.markets).map(([k,v])=>'<div class="row"><span>'+k+"</span><span>"+v+"</span></div>").join("");
   if(S.portfolio){
     const p=S.portfolio;
@@ -51,6 +54,7 @@ const WORK_ROUTES={
   chief:["risk","trading","discussion"]
 };
 const LAST_SPOT={};
+const PATROL_INDEX={};
 
 function centerOf(el,container){
   if(!el)return null;
@@ -76,15 +80,17 @@ function moveWorker(id,text){
   if(!layer||!home)return;
   const targets=WORK_ROUTES[id]||["chief","risk"];
   const lower=(text||"").toLowerCase();
-  let targetId=targets.find(t=>lower.includes(t.replace("_"," ")))||targets[0];
+  let targetId=targets.find(t=>lower.includes(t.replace("_"," ")));
+  if(!targetId){
+    PATROL_INDEX[id]=((PATROL_INDEX[id]||0)+1)%targets.length;
+    targetId=targets[PATROL_INDEX[id]];
+  }
   if(targetId==="discussion")targetId="quant";
   if(targetId==="trading")targetId="walker";
   const target=$(targetId);
   if(!target)return;
   const start=LAST_SPOT[id]||centerOf(home,layer);
-  const end=targetId==="walker"
-    ? centerOf($("walker"),layer)
-    : centerOf(target,layer);
+  const end=targetId==="walker"?centerOf($("walker"),layer):centerOf(target,layer);
   if(!start||!end)return;
   const r=ensureRoamer(id);
   if(!r)return;
@@ -112,6 +118,19 @@ function event(id,text,move=true){
   S.events.push({time:new Date().toLocaleTimeString(),agent:AGENTS[id]||id,text});
   if(S.events.length>100)S.events.shift();
   render();
+}
+
+function start24x7Patrol(){
+  Object.keys(AGENTS).forEach((id,i)=>{
+    setTimeout(()=>moveWorker(id,"continuous monitoring patrol"),700+i*260);
+  });
+  setInterval(()=>{
+    Object.keys(AGENTS).forEach((id,i)=>{
+      if(S.status[id]!=="WORKING")S.status[id]="MONITORING";
+      setTimeout(()=>moveWorker(id,"continuous monitoring patrol"),i*120);
+    });
+    render();
+  },12000);
 }
 
 function applySnapshot(x){
@@ -148,3 +167,4 @@ function connect(){
 setInterval(render,1000);
 render();
 connect();
+start24x7Patrol();
