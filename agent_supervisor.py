@@ -99,7 +99,9 @@ class AgentSupervisor:
                 "backend": backend,
                 "feed": {"status": feed_status},
                 "validation": self.validation(),
-                "paper": paper,\n                "agent_count": len(AGENTS),\n                "strategy_agent_count": 5,
+                "paper": paper,
+                "agent_count": len(AGENTS),
+                "strategy_agent_count": 5,
                 "live_trading_authorized": False,
             }
         except Exception as exc:
