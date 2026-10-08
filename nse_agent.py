@@ -115,6 +115,7 @@ class NSETradingCompany:
             self.open_positions = state.get("open_positions", {})
             self.traded_today = set(state.get("traded_today", []))
             self.paper_cycle = int(state.get("paper_cycle", 0))
+            self.total_paper_trades = int(state.get("total_paper_trades", 0))
         except Exception as exc:
             print("[paper state recovered]", repr(exc))
 
@@ -135,6 +136,7 @@ class NSETradingCompany:
                     "open_positions": self.open_positions,
                     "traded_today": sorted(self.traded_today),
                     "paper_cycle": self.paper_cycle,
+                    "total_paper_trades": self.total_paper_trades,
                     "learning": self.learning.summary(),
                     "risk": self._paper_risk_snapshot(),
                     "updated_at": datetime.now().isoformat(),
@@ -448,6 +450,11 @@ class NSETradingCompany:
                     pnl=pnl,
                     exit_price=exit_price,
                 )
+                hq_events.emit("trade", action="CLOSE",
+                               symbol=position.get("tradingsymbol", market_id),
+                               side="SELL" if position["side"] == "BUY" else "BUY",
+                               quantity=position["qty"], price=round(exit_price, 4),
+                               pnl=round(pnl, 2), reason=reason, paper=True)
                 del self.open_positions[market_id]
         equity = self._paper_equity(prices)
         self.daily_pnl = self.daily_realized_pnl + (equity - self.cash - self.realized_pnl)
@@ -517,6 +524,7 @@ class NSETradingCompany:
             "drawdown_fraction": risk["drawdown_fraction"],
             "gross_notional": risk["gross_notional"],
             "gross_exposure_fraction": risk["gross_exposure_fraction"],
+            "total_paper_trades": self.total_paper_trades,
         }
 
     def paper_or_live(self, sig):
@@ -620,6 +628,10 @@ class NSETradingCompany:
                 "entry_cycle": self.paper_cycle,
             }
             self.traded_today.add(m.market_id)
+            self.total_paper_trades += 1
+            hq_events.emit("trade", action="OPEN", symbol=m.tradingsymbol, side=side,
+                           quantity=qty, price=round(entry, 4),
+                           score=round(sig.score, 4), confidence=round(sig.confidence, 4), paper=True)
             print(
                 "[PAPER_ORDER]", m.tradingsymbol, side, qty, m.last_price,
                 "score=%.3f" % sig.score, "confidence=%.2f" % sig.confidence,
@@ -715,8 +727,10 @@ class NSETradingCompany:
         if session_end and not self.execution.enabled:
             closed = self._close_all_paper_positions(prices, "session_end")
             print("[paper] session close; positions_closed=", closed)
+            metrics = self.paper_metrics(prices)
+            hq_events.emit("portfolio", **metrics)
             self._save_paper_state()
-            print("[paper]", self.paper_metrics(prices))
+            print("[paper]", metrics)
             return
 
         if self.execution.enabled:
