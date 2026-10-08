@@ -1,21 +1,58 @@
-# Trading Agent HQ — Animated Command Center
+# Trading Agent HQ — Live Command Center
 
-This is the visual operations UI for the trading-agent system.
+The HQ is connected to the real trading-engine event stream.
 
-- Each specialist has its own animated office/cabin.
-- Bull/Bear/Quant/News have a discussion room.
-- Red Team, Risk and Chief have dedicated rooms.
-- Characters move and animate when events arrive.
-- The production event stream is intended to come from the real Azure trading engine.
-- The fallback demo keeps the UI alive until the backend event stream is connected.
+## What is real
+
+The engine publishes events when it actually:
+- scans the market
+- computes feature evidence
+- receives each strategy vote
+- enters the Bull/Bear/Quant/News discussion
+- runs Red Team and Risk/Chief decision flow
+- opens/closes a paper position
+- updates learning
+
+The characters are driven by those events. The browser does **not** invent a
+production work loop.
 
 ## Event stream
-The page connects to `/events` using Server-Sent Events (SSE). Supported messages:
-`{"type":"activity","agent":"momentum","text":"Scanning GOLD","move":true}`
-`{"type":"market","symbol":"GOLD","value":"8924.0"}`
-`{"type":"status","status":{"momentum":"WORKING","risk":"IDLE"}}`
 
-## Security
-No broker credentials belong in the browser. Put the dashboard behind a private authentication layer such as Cloudflare Access before exposing it publicly.
+The page connects to `/events` using Server-Sent Events (SSE).
 
-This dashboard is visualization only and does not place orders.
+Supported messages include:
+- `activity`: moves an agent and adds a live activity entry
+- `market`: updates a market display
+- `status`: updates agent state
+- `snapshot`: carries actual feature values and votes used for a decision
+- `heartbeat`: proves the engine is alive
+
+## Run locally
+
+From the repository root:
+
+```bash
+python dashboard/hq_server.py
+```
+
+Then open `http://127.0.0.1:8787`.
+
+The engine writes events to `data/hq_events.jsonl`. Set `HQ_EVENT_FILE`
+to override the path.
+
+## Azure systemd
+
+Copy `deploy/trading-agent-hq.service` to
+`/etc/systemd/system/trading-agent-hq.service`, then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now trading-agent-hq
+curl http://127.0.0.1:8787/health
+```
+
+Keep the listener on localhost and expose it only through a private
+authentication layer such as Cloudflare Access/Tunnel. Never put broker
+credentials in the frontend.
+
+This dashboard is visualization only; it does not place broker orders.
