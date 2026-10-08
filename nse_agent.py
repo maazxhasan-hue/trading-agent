@@ -798,16 +798,31 @@ class NSETradingCompany:
         if (1 - equity / max(self.peak, 1)) >= MAX_DRAWDOWN:
             print("[risk] kill switch: portfolio drawdown limit")
             return
+        # Full-potential paper mode evaluates the entire scanned universe by default.
+        # Live mode remains independently capped by the configured MARKETS_PER_CYCLE guard.
         research_limit = int(
             os.getenv(
                 "MARKETS_PER_CYCLE",
                 os.getenv(
                     "NSE_RESEARCH_MARKETS_PER_CYCLE",
-                    "25" if self.execution.enabled else "1000",
+                    str(len(markets)) if not self.execution.enabled else "25",
                 ),
             )
         )
-        for m in markets[:max(1, research_limit)]:
+        if not self.execution.enabled:
+            research_limit = min(len(markets), max(1, research_limit))
+        else:
+            research_limit = max(1, research_limit)
+        paper_all_markets = not self.execution.enabled and (
+            os.getenv("PAPER_EVALUATE_ALL_MARKETS", "true").lower() == "true"
+        )
+        selected_markets = markets if paper_all_markets else markets[:research_limit]
+        hq_events.activity(
+            "research",
+            f"Full-potential evaluation: {len(selected_markets)} markets",
+            move=True,
+        )
+        for m in selected_markets:
             try:
                 f = self.features(m)
                 if not f:
@@ -848,10 +863,12 @@ class NSETradingCompany:
                     )
                 self.learn(m, f, votes)
                 sig = self.signal(m, f, votes)
-                if (
-                    sig
-                    and m.market_id not in self.traded_today
-                    and m.market_id not in self.open_positions
+                if sig and (
+                    os.getenv("PAPER_ALLOW_REENTRY", "false").lower() == "true"
+                    or (
+                        m.market_id not in self.traded_today
+                        and m.market_id not in self.open_positions
+                    )
                 ):
                     self.paper_or_live(sig)
             except Exception as exc:
