@@ -1,8 +1,8 @@
-"""Lightweight online forecast learning for paper-mode agents.
+"""Conservative online learning for paper-mode trading agents.
 
-This module learns from *observed next-horizon price moves*, not from realized
-trading P&L. It is deliberately separated from the trade gate: forecast
-learning can improve agent weighting, but it can never authorize a trade.
+Learns from out-of-sample next-horizon price moves and records enough
+diagnostics to reward stable agents while suppressing unstable ones. Learning
+never authorizes a trade by itself.
 """
 from __future__ import annotations
 
@@ -16,20 +16,20 @@ from strategy_validation import walk_forward_report
 
 
 class AgentLearningStore:
-    def __init__(self, path=None, horizon_seconds=None, max_pending=5000, max_history=10000, max_no_move_retries=6):
+    def __init__(self, path=None, horizon_seconds=None, max_pending=5000,
+                 max_history=10000, max_no_move_retries=6):
         state_root = "/data" if os.path.isdir("/data") else "."
-        self.path = path or os.getenv(
-            "AGENT_LEARNING_FILE",
-            os.path.join(state_root, "agent_learning.json"),
-        )
+        self.path = path or os.getenv("AGENT_LEARNING_FILE",
+                                      os.path.join(state_root, "agent_learning.json"))
         self.horizon_seconds = int(
-            horizon_seconds
-            if horizon_seconds is not None
+            horizon_seconds if horizon_seconds is not None
             else os.getenv("AGENT_LEARNING_HORIZON_SECONDS", "300")
         )
         self.max_pending = max(100, int(max_pending))
         self.max_history = max(1000, int(max_history))
-        self.max_no_move_retries = max(1, int(os.getenv("LEARNING_MAX_NO_MOVE_RETRIES", max_no_move_retries)))
+        self.max_no_move_retries = max(
+            1, int(os.getenv("LEARNING_MAX_NO_MOVE_RETRIES", max_no_move_retries))
+        )
         Path(os.path.dirname(self.path) or ".").mkdir(parents=True, exist_ok=True)
         self.data = self._load()
 
@@ -52,7 +52,6 @@ class AgentLearningStore:
         except Exception:
             return default
 
-
     def _save(self):
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -64,7 +63,6 @@ class AgentLearningStore:
         return 1 if float(vote) > 0 else -1 if float(vote) < 0 else 0
 
     def record_observation(self, market_id, price, now=None, max_points=120, save=True):
-        """Persist real observed market prices for walk-forward validation."""
         try:
             price = float(price)
         except (TypeError, ValueError):
@@ -86,7 +84,8 @@ class AgentLearningStore:
         rows = self.data["observations"].get(str(market_id), [])
         return [float(x["price"]) for x in rows if isinstance(x, dict) and "price" in x]
 
-    def record_forecast(self, market_id, question, price, votes, confidence, edge, now=None):
+    def record_forecast(self, market_id, question, price, votes, confidence, edge, now=None,
+                        context=None):
         now = float(now if now is not None else time.time())
         directions = {
             agent: self._direction(vote)
@@ -95,10 +94,6 @@ class AgentLearningStore:
         }
         if not directions:
             return
-
-        # Keep at most one active forecast per market for a given horizon bucket.
-        # Without this guard, a flat market can accumulate duplicate forecasts
-        # every scan cycle while waiting for a meaningful outcome.
         bucket = int(now // max(1, self.horizon_seconds))
         market_key = str(market_id)
         direction_key = tuple(sorted(directions))
@@ -110,7 +105,6 @@ class AgentLearningStore:
                 and existing_directions == direction_key
             ):
                 return
-
         self.data["pending"].append({
             "created_at": now,
             "resolve_after": now + self.horizon_seconds,
@@ -120,6 +114,7 @@ class AgentLearningStore:
             "edge": float(edge),
             "confidence": float(confidence),
             "directions": directions,
+            "context": context or {},
             "no_move_retries": 0,
         })
         self.data["pending"] = self.data["pending"][-self.max_pending:]
@@ -129,24 +124,18 @@ class AgentLearningStore:
         if outcome == 0:
             return
         d = self.data["agents"].setdefault(agent, {
-            "forecasts": 0,
-            "correct": 0,
-            "incorrect": 0,
-            "brier_sum": 0.0,
-            "last_updated": None,
+            "forecasts": 0, "correct": 0, "incorrect": 0,
+            "brier_sum": 0.0, "recent": [], "last_updated": None,
         })
         d["forecasts"] += 1
         correct = direction == outcome
         d["correct"] += int(correct)
         d["incorrect"] += int(not correct)
-        # Convert confidence into a probability for the direction forecast.
         confidence = min(0.95, max(0.50, float(confidence)))
-        # Brier score is evaluated on the probability assigned to the
-        # forecasted direction. The outcome is 1 only when that direction
-        # occurs; an incorrect high-confidence forecast must therefore incur
-        # a large penalty rather than an artificially small one.
-        p = confidence
-        d["brier_sum"] += (p - (1.0 if correct else 0.0)) ** 2
+        d["brier_sum"] += (confidence - (1.0 if correct else 0.0)) ** 2
+        recent = d.setdefault("recent", [])
+        recent.append({"correct": bool(correct), "time": time.time()})
+        d["recent"] = recent[-50:]
         d["last_updated"] = time.time()
 
     def resolve(self, price_lookup, now=None):
@@ -164,7 +153,7 @@ class AgentLearningStore:
                     continue
                 current = float(current)
                 previous = float(item["price"])
-                move_mode = os.getenv("LEARNING_MOVE_MODE", "absolute").lower()
+                move_mode = os.getenv("LEARNING_MOVE_MODE", "relative").lower()
                 if move_mode == "relative":
                     threshold = float(os.getenv("LEARNING_MIN_MOVE_PCT", "0.001"))
                     move = abs(current - previous) / max(abs(previous), 1e-12)
@@ -172,10 +161,6 @@ class AgentLearningStore:
                     threshold = float(os.getenv("LEARNING_MIN_MOVE", "0.005"))
                     move = abs(current - previous)
                 if move < threshold:
-                    # A flat market is not evidence that the directional thesis
-                    # was right or wrong. Give it a bounded number of extra
-                    # horizons, then record it as neutral so it cannot remain
-                    # pending forever.
                     retries = int(item.get("no_move_retries", 0)) + 1
                     if retries <= self.max_no_move_retries:
                         item["no_move_retries"] = retries
@@ -194,6 +179,7 @@ class AgentLearningStore:
                 item["resolved_at"] = now
                 item["outcome"] = outcome
                 item["resolved_price"] = current
+                item["realized_move"] = (current - previous) / max(abs(previous), 1e-12)
                 self.data["history"].append(item)
                 resolved += 1
             except Exception:
@@ -206,32 +192,34 @@ class AgentLearningStore:
     def stats(self, agent):
         d = self.data["agents"].get(agent, {})
         n = int(d.get("forecasts", 0))
+        recent = d.get("recent", [])[-20:]
+        recent_accuracy = (
+            sum(bool(x.get("correct")) for x in recent) / len(recent)
+            if recent else None
+        )
         return {
             "forecasts": n,
             "accuracy": (d.get("correct", 0) / n) if n else None,
             "brier": (d.get("brier_sum", 0.0) / n) if n else None,
+            "recent_accuracy": recent_accuracy,
         }
 
     def validation_report(self, agent, minimum_samples=None, minimum_accuracy=None, maximum_brier=None):
-        """Return aggregate plus chronological walk-forward validation evidence."""
         minimum_samples = int(os.getenv("LEARNING_MIN_SAMPLES", "30")) if minimum_samples is None else int(minimum_samples)
         minimum_accuracy = float(os.getenv("LEARNING_MIN_ACCURACY", "0.55")) if minimum_accuracy is None else float(minimum_accuracy)
         maximum_brier = float(os.getenv("LEARNING_MAX_BRIER", "0.25")) if maximum_brier is None else float(maximum_brier)
         return walk_forward_report(
-            self.data.get("history", []),
-            agent,
+            self.data.get("history", []), agent,
             test_size=int(os.getenv("LEARNING_WALK_FORWARD_TEST_SIZE", "10")),
             min_train_samples=int(os.getenv("LEARNING_WALK_FORWARD_MIN_TRAIN", "10")),
             min_windows=int(os.getenv("LEARNING_WALK_FORWARD_MIN_WINDOWS", "2")),
             recent_size=int(os.getenv("LEARNING_RECENT_SAMPLES", "10")),
             min_recent_accuracy=float(os.getenv("LEARNING_MIN_RECENT_ACCURACY", "0.50")),
             max_recent_accuracy_drop=float(os.getenv("LEARNING_MAX_RECENT_ACCURACY_DROP", "0.15")),
-            min_accuracy=minimum_accuracy,
-            max_brier=maximum_brier,
+            min_accuracy=minimum_accuracy, max_brier=maximum_brier,
         )
 
     def qualification(self, agent, minimum_samples=None, minimum_accuracy=None, maximum_brier=None):
-        """Return a conservative trading-eligibility decision for one agent."""
         minimum_samples = int(os.getenv("LEARNING_MIN_SAMPLES", "30")) if minimum_samples is None else int(minimum_samples)
         minimum_accuracy = float(os.getenv("LEARNING_MIN_ACCURACY", "0.55")) if minimum_accuracy is None else float(minimum_accuracy)
         maximum_brier = float(os.getenv("LEARNING_MAX_BRIER", "0.25")) if maximum_brier is None else float(maximum_brier)
@@ -253,12 +241,9 @@ class AgentLearningStore:
         return True, "validated_walk_forward", stats
 
     def qualified_agents(self, agent_ids, minimum_samples=None, minimum_accuracy=None, maximum_brier=None):
-        qualified = []
-        details = {}
+        qualified, details = [], {}
         for agent in agent_ids:
-            ok, reason, stats = self.qualification(
-                agent, minimum_samples, minimum_accuracy, maximum_brier
-            )
+            ok, reason, stats = self.qualification(agent, minimum_samples, minimum_accuracy, maximum_brier)
             details[agent] = {"qualified": ok, "reason": reason, **stats}
             if ok:
                 qualified.append(agent)
@@ -271,18 +256,28 @@ class AgentLearningStore:
         minimum_samples = int(os.getenv("LEARNING_MIN_SAMPLES", "30")) if minimum_samples is None else int(minimum_samples)
         stats = self.stats(agent)
         n = stats["forecasts"]
-        if n < minimum_samples:
+        if n < minimum_samples or stats["accuracy"] is None:
             return 1.0
         accuracy = float(stats["accuracy"])
-        # Small bounded influence adjustment; no agent can dominate.
-        return max(0.70, min(1.30, 1.0 + (accuracy - 0.50) * 1.2))
+        recent = stats.get("recent_accuracy")
+        # Stable agents receive a small boost; recent deterioration removes it.
+        weight = 1.0 + (accuracy - 0.50) * 1.2
+        if recent is not None:
+            weight += max(-0.15, min(0.10, (recent - accuracy) * 0.5))
+        return max(0.70, min(1.30, weight))
+
+    def learning_snapshot(self, agent_ids):
+        qualified, details = self.qualified_agents(agent_ids)
+        return {
+            "qualified": qualified,
+            "details": details,
+            "weights": {agent: self.weight(agent) for agent in agent_ids},
+        }
 
     def summary(self):
         return {
             "pending": len(self.data["pending"]),
             "resolved": len(self.data["history"]),
-            "agents": {
-                agent: self.stats(agent)
-                for agent in sorted(self.data["agents"])
-            },
+            "observations": self.observation_count(),
+            "agents": {agent: self.stats(agent) for agent in sorted(self.data["agents"])},
         }
