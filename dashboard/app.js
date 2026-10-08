@@ -1,5 +1,5 @@
 const AGENTS={momentum:"Momentum",mean_reversion:"Mean Reversion",event_driven:"Event Driven",mcx:"MCX Specialist",arbitrage:"Cross-Market",research:"Research",bull:"Bull",bear:"Bear",quant:"Quant",news:"News/Social",redteam:"Red Team",risk:"Risk",chief:"Chief"};
-const S={events:[],status:{},markets:{GOLD:"—",SILVER:"—",CRUDEOIL:"—",NATURALGAS:"—",COPPER:"—"},live:false};
+const S={events:[],status:{},markets:{GOLD:"—",SILVER:"—",CRUDEOIL:"—",NATURALGAS:"—",COPPER:"—"},live:false,evidence:null};
 Object.keys(AGENTS).forEach(k=>S.status[k]="IDLE");
 const $=id=>document.getElementById(id);
 
@@ -8,6 +8,12 @@ function render(){
   $("agents").innerHTML=Object.entries(AGENTS).map(([k,n])=>'<div class="row"><span>'+n+'</span><span class="pill '+(S.status[k]==="WORKING"?"good":"")+'">'+S.status[k]+"</span></div>").join("");
   $("markets").innerHTML=Object.entries(S.markets).map(([k,v])=>'<div class="row"><span>'+k+"</span><span>"+v+"</span></div>").join("");
   $("activity").innerHTML=S.events.slice(-35).reverse().map(e=>'<div class="event"><small>'+e.time+'</small><b>'+e.agent+"</b> — "+e.text+"</div>").join("");
+  if(S.evidence){
+    const f=S.evidence.features||{}, v=S.evidence.votes||{};
+    const features=Object.entries(f).map(([k,val])=>'<span class="evidence-chip">'+k+' '+val+'</span>').join("");
+    const votes=Object.entries(v).map(([k,val])=>'<div class="row"><span>'+k+'</span><span>'+Number(val).toFixed(3)+'</span></div>').join("");
+    $("evidence").innerHTML='<b>'+S.evidence.symbol+'</b><div class="chips">'+features+'</div>'+votes+'<div class="evidence-decision">Decision: '+(S.evidence.decision||"ANALYZING")+'</div>';
+  }
 }
 
 function event(id,text,move=true){
