@@ -60,7 +60,10 @@ class AgentSupervisor:
             from agent_learning import AgentLearningStore
             backend = os.getenv("TRADING_BACKEND", "mcx").lower()
             store = AgentLearningStore(path=self._learning_path(backend))
-            ids = ["momentum-v3", "mean_reversion-v3", "event_driven-v3", "mcx_commodity_specialist-v3", "cross_market_arbitrage-v3"]
+            ids = [
+                "momentum-v3", "mean_reversion-v3", "event_driven-v3",
+                "mcx_commodity_specialist-v3", "cross_market_arbitrage-v3",
+            ]
             qualified, details = store.qualified_agents(ids)
             return {
                 "status": "qualified" if len(qualified) >= 3 else "collecting",
@@ -87,12 +90,12 @@ class AgentSupervisor:
                 with open(metrics_path, encoding="utf-8") as f:
                     raw = json.load(f)
                     paper = raw if isinstance(raw, dict) else {}
-            feed_status = "zerodha_mcx" if backend == "mcx" else ("zerodha_quote" if backend == "zerodha_nse" else "polymarket_gamma")
+            feed_status = (\n                "angelone_mcx" if backend in {"mcx", "angelone_mcx"} else\n                "angelone_nse" if backend == "angelone_nse" else\n                "zerodha_quote" if backend == "zerodha_nse" else "unknown"\n            )
             return {
                 "backend": backend,
                 "feed": {"status": feed_status},
                 "validation": self.validation(),
-                "paper": paper,
+                "paper": paper,\n                "agent_count": len(AGENTS),\n                "strategy_agent_count": 5,
                 "live_trading_authorized": False,
             }
         except Exception as exc:
@@ -140,7 +143,7 @@ class AgentSupervisor:
         class HealthHandler(BaseHTTPRequestHandler):
             def do_GET(self):
                 if self.path in ("/", "/health", "/healthz"):
-                    payload = {"status": "ok", "service": "trading-company"}
+                    payload = {"status": "ok", "service": "trading-company", "live_trading_authorized": False}
                 elif self.path == "/validation":
                     payload = supervisor.validation()
                 elif self.path == "/metrics":
