@@ -75,6 +75,16 @@ class Handler(BaseHTTPRequestHandler):
             EVENT_FILE.parent.mkdir(parents=True, exist_ok=True)
             EVENT_FILE.touch(exist_ok=True)
             with EVENT_FILE.open("r", encoding="utf-8") as handle:
+                # Replay recent state first so a newly opened HQ is populated
+                # immediately, then continue streaming only new events.
+                recent = handle.readlines()[-1000:]
+                for line in recent:
+                    try:
+                        json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    self.wfile.write(("data: " + line.strip() + "\n\n").encode("utf-8"))
+                self.wfile.flush()
                 handle.seek(0, 2)
                 last_keepalive = time.monotonic()
                 while True:
@@ -92,6 +102,7 @@ class Handler(BaseHTTPRequestHandler):
                         self.wfile.flush()
                         last_keepalive = time.monotonic()
                     time.sleep(0.5)
+
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
 
