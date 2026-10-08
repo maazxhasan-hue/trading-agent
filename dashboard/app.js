@@ -47,19 +47,19 @@ function render(){
 }
 
 const WORK_ROUTES={
-  research:["momentum","event_driven","mcx","chief"],
-  momentum:["research","chief","risk"],
-  mean_reversion:["research","chief","risk"],
-  event_driven:["research","chief","risk"],
-  mcx:["research","momentum","chief"],
-  arbitrage:["research","risk","chief"],
-  bull:["quant","chief","discussion"],
-  bear:["quant","risk","chief"],
-  quant:["chief","risk","discussion"],
-  news:["research","chief","discussion"],
-  redteam:["risk","chief"],
-  risk:["chief","trading"],
-  chief:["risk","trading","discussion"]
+  research:["momentum","event_driven","mcx","arbitrage","chief","risk"],
+  momentum:["research","chief","risk","mean_reversion","event_driven"],
+  mean_reversion:["momentum","research","chief","risk","event_driven"],
+  event_driven:["research","momentum","mcx","chief","risk","redteam"],
+  mcx:["research","momentum","chief","risk","event_driven"],
+  arbitrage:["research","mcx","risk","chief","quant"],
+  bull:["quant","chief","research","discussion","risk"],
+  bear:["quant","risk","chief","redteam","discussion"],
+  quant:["bull","bear","chief","risk","research","discussion"],
+  news:["research","chief","discussion","event_driven","quant"],
+  redteam:["risk","chief","research","discussion"],
+  risk:["chief","redteam","trading","research","momentum"],
+  chief:["research","risk","trading","discussion","mcx","quant"]
 };
 const LAST_SPOT={};
 const PATROL_INDEX={};
@@ -129,16 +129,18 @@ function event(id,text,move=true){
 }
 
 function start24x7Patrol(){
+  // Every worker gets a real cabin-to-cabin route. The patrol is visual only;
+  // real engine events always take priority over the next patrol destination.
   Object.keys(AGENTS).forEach((id,i)=>{
-    setTimeout(()=>moveWorker(id,"continuous monitoring patrol"),700+i*260);
+    setTimeout(()=>moveWorker(id,"continuous cabin patrol"),700+i*260);
   });
   setInterval(()=>{
     Object.keys(AGENTS).forEach((id,i)=>{
       if(S.status[id]!=="WORKING")S.status[id]="MONITORING";
-      setTimeout(()=>moveWorker(id,"continuous monitoring patrol"),i*120);
+      setTimeout(()=>moveWorker(id,"continuous cabin patrol"),i*180);
     });
     render();
-  },12000);
+  },8000);
 }
 
 function renderCandlePanel(){
