@@ -104,7 +104,7 @@ class NSEPreTradeDebate:
             structural_veto, veto_reason = True, "poor data quality"
         elif features.get("liquidity_score", 1.0) < 0.35:
             structural_veto, veto_reason = True, "weak liquidity"
-        elif features.get("volatility_ratio", 1.0) > self.max_volatility:
+        elif "volatility_ratio" in features and features.get("volatility_ratio", 0.0) > self.max_volatility:
             structural_veto, veto_reason = True, "extreme volatility"
         elif features.get("rsi", 50.0) > 78 and majority_direction > 0:
             structural_veto, veto_reason = True, "overbought trend chase"
