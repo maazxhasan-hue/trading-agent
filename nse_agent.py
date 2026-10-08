@@ -813,6 +813,39 @@ class NSETradingCompany:
                 if not f:
                     continue
                 votes = self.agent_votes(f, m)
+                agent_ui = {
+                    "momentum-v3": "momentum",
+                    "mean_reversion-v3": "mean_reversion",
+                    "event_driven-v3": "event_driven",
+                    "mcx_commodity_specialist-v3": "mcx",
+                    "cross_market_arbitrage-v3": "arbitrage",
+                }
+                for agent_name, vote in votes.items():
+                    ui_agent = agent_ui.get(agent_name, "research")
+                    direction = "BUY" if vote > 0.05 else "SELL" if vote < -0.05 else "NEUTRAL"
+                    stats = self.learning.stats(agent_name)
+                    weight = self.learning.weight(agent_name)
+                    adaptation = "boosted" if weight > 1.02 else "reduced" if weight < 0.98 else "baseline"
+                    evidence = []
+                    if f["r10"] > 0: evidence.append("10-bar momentum positive")
+                    elif f["r10"] < 0: evidence.append("10-bar momentum negative")
+                    if f["rsi"] >= 65: evidence.append("RSI elevated")
+                    elif f["rsi"] <= 35: evidence.append("RSI depressed")
+                    if f["breakout"] > 0: evidence.append("breakout pressure")
+                    if f["breakdown"] < 0: evidence.append("breakdown pressure")
+                    if f["volume_ratio"] > 1.25: evidence.append("volume expansion")
+                    thesis = f"{direction} thesis from live feature evidence; vote {vote:+.3f}"
+                    hq_events.agent_analysis(
+                        ui_agent, m.tradingsymbol, thesis,
+                        evidence=evidence[:4], action=direction,
+                        confidence=stats.get("recent_accuracy"),
+                        adaptation=adaptation,
+                    )
+                    hq_events.activity(
+                        ui_agent,
+                        f"{m.tradingsymbol}: {direction} thesis; {adaptation} weight",
+                        move=True,
+                    )
                 self.learn(m, f, votes)
                 sig = self.signal(m, f, votes)
                 if (
