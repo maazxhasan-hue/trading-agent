@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from agent_runtime import AgentRuntimeManager
+from agent_research_tools import AgentResearchTools
 
 AGENTS = [
     "orchestrator","market-scanner","fair-value","momentum","mean-reversion",
@@ -22,6 +23,7 @@ class AgentSupervisor:
             os.getenv("AGENT_WORKSPACE_ROOT", "agent_workspaces")
         )
         self.runtimes = {agent: self.runtime.provision(agent) for agent in AGENTS}
+        self.research_tools = AgentResearchTools(self.runtime)
 
     def health(self):
         return {
