@@ -1,4 +1,4 @@
-"""Read-only browser research for isolated agents."""
+"""Read-only browser research and restricted terminal tools for isolated agents."""
 from dataclasses import dataclass
 from agent_runtime import AgentRuntimeManager
 
@@ -13,6 +13,14 @@ class BrowserResearchResult:
 class AgentResearchTools:
     def __init__(self, manager=None):
         self.manager = manager or AgentRuntimeManager()
+
+    def capabilities(self, agent_id):
+        runtime = self.manager.provision(agent_id)
+        return self.manager.capability_status(runtime)
+
+    def terminal(self, agent_id, command, timeout=None):
+        runtime = self.manager.provision(agent_id)
+        return self.manager.run_terminal(runtime, command, timeout)
 
     def fetch_page(self, agent_id, url, max_chars=6000):
         if not (url.startswith("https://") or url.startswith("http://")):
