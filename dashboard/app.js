@@ -35,14 +35,80 @@ function render(){
   }
 }
 
+const WORK_ROUTES={
+  research:["momentum","event_driven","mcx","chief"],
+  momentum:["research","chief","risk"],
+  mean_reversion:["research","chief","risk"],
+  event_driven:["research","chief","risk"],
+  mcx:["research","momentum","chief"],
+  arbitrage:["research","risk","chief"],
+  bull:["quant","chief","discussion"],
+  bear:["quant","risk","chief"],
+  quant:["chief","risk","discussion"],
+  news:["research","chief","discussion"],
+  redteam:["risk","chief"],
+  risk:["chief","trading"],
+  chief:["risk","trading","discussion"]
+};
+const LAST_SPOT={};
+
+function centerOf(el,container){
+  if(!el)return null;
+  const a=el.getBoundingClientRect(), b=container.getBoundingClientRect();
+  return {x:a.left+a.width/2-b.left,y:a.top+a.height/2-b.top};
+}
+function ensureRoamer(id){
+  const layer=$("roaming-layer");
+  let el=$(id);
+  if(!layer||!el)return null;
+  let r=document.getElementById("roamer-"+id);
+  if(!r){
+    r=document.createElement("div");
+    r.id="roamer-"+id;
+    r.className="roamer worker-suit";
+    r.innerHTML='<span class="worker-head"></span><span class="worker-body"></span><span class="worker-label">'+(AGENTS[id]||id)+'</span>';
+    layer.appendChild(r);
+  }
+  return r;
+}
+function moveWorker(id,text){
+  const layer=$("roaming-layer"), home=$(id);
+  if(!layer||!home)return;
+  const targets=WORK_ROUTES[id]||["chief","risk"];
+  const lower=(text||"").toLowerCase();
+  let targetId=targets.find(t=>lower.includes(t.replace("_"," ")))||targets[0];
+  if(targetId==="discussion")targetId="quant";
+  if(targetId==="trading")targetId="walker";
+  const target=$(targetId);
+  if(!target)return;
+  const start=LAST_SPOT[id]||centerOf(home,layer);
+  const end=targetId==="walker"
+    ? centerOf($("walker"),layer)
+    : centerOf(target,layer);
+  if(!start||!end)return;
+  const r=ensureRoamer(id);
+  if(!r)return;
+  home.classList.add("home-hidden");
+  r.style.left=start.x+"px"; r.style.top=start.y+"px";
+  r.classList.remove("moving");
+  void r.offsetWidth;
+  r.style.setProperty("--tx",end.x-start.x+"px");
+  r.style.setProperty("--ty",end.y-start.y+"px");
+  r.classList.add("moving");
+  const duration=Math.min(5200,Math.max(1800,Math.hypot(end.x-start.x,end.y-start.y)*4));
+  setTimeout(()=>{
+    r.style.left=end.x+"px"; r.style.top=end.y+"px"; r.classList.remove("moving");
+    LAST_SPOT[id]={x:end.x,y:end.y};
+  },duration);
+}
 function event(id,text,move=true){
   if(S.status[id]!==undefined)S.status[id]="WORKING";
   const el=$(id);
   if(el){
     el.classList.add("busy");
-    if(move)el.classList.add("move");
-    setTimeout(()=>el.classList.remove("busy","move"),1800);
+    setTimeout(()=>el.classList.remove("busy"),1800);
   }
+  if(move)moveWorker(id,text);
   S.events.push({time:new Date().toLocaleTimeString(),agent:AGENTS[id]||id,text});
   if(S.events.length>100)S.events.shift();
   render();
