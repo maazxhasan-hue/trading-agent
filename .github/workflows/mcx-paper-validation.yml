@@ -21,12 +21,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      # CI paper validation is deliberately offline from Angel One.
+      # Production MCX runs use Angel One via MCX_BACKEND=angelone.
       TRADING_BACKEND: "mcx"
+      MCX_BACKEND: "yahoo"
+      MCX_MARKET_DATA_PROVIDER: "yahoo"
       LIVE_TRADING: "false"
       LIVE_TRADING_ARM: ""
       CLOUD_RUNTIME: "false"
       LIVE_RUNTIME_APPROVED: "false"
-      MCX_MARKET_DATA_PROVIDER: "yahoo"
       MARKET_INTERVAL: "5m"
       MAX_MARKETS_PER_SCAN: "100"
       MARKETS_PER_CYCLE: "100"
