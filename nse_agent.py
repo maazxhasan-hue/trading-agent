@@ -30,6 +30,7 @@ from nse_regime import classify as classify_regime
 from trade_journal import TradeJournal
 from zerodha_order_manager import ZerodhaOrderManager, OrderLifecycleError
 from angelone_order_manager import AngelOneOrderManager
+import hq_events
 
 SCAN_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "300"))
 MIN_AGENTS = int(os.getenv("MIN_VALIDATED_AGENTS", "3"))
@@ -307,14 +308,42 @@ class NSETradingCompany:
             edge,
             now=time.time(),
         )
+        agent_map = {
+            "momentum-v3": "momentum",
+            "mean_reversion-v3": "mean_reversion",
+            "event_driven-v3": "event_driven",
+            "mcx_commodity_specialist-v3": "mcx",
+            "cross_market_arbitrage-v3": "arbitrage",
+        }
+        for agent_name, vote in votes.items():
+            ui_agent = agent_map.get(agent_name, "research")
+            label = "BUY" if vote > 0.05 else "SELL" if vote < -0.05 else "NEUTRAL"
+            hq_events.status(**{ui_agent: "WORKING"})
+            hq_events.activity(
+                ui_agent,
+                f"{market.tradingsymbol}: evaluating {label} ({vote:+.2f})",
+                move=True,
+            )
+        hq_events.market(market.tradingsymbol, round(float(f["price"]), 4))
+        hq_events.snapshot(market.tradingsymbol, f, votes)
 
     def signal(self, market, f, votes):
         qualified, _ = self.learning.qualified_agents(list(votes.keys()))
         q = set(qualified)
         usable = [v for a, v in votes.items() if a in q and abs(v) > 0.05]
         if len(q) < MIN_AGENTS or len(usable) < MIN_AGENTS:
+            hq_events.activity(
+                "chief",
+                f"{market.tradingsymbol}: waiting for {MIN_AGENTS} qualified specialists",
+                move=False,
+            )
             return None
         regime = classify_regime(f)
+        hq_events.activity(
+            "chief",
+            f"{market.tradingsymbol}: opening specialist debate",
+            move=True,
+        )
         debate = self.debate.run(f, votes, qualified)
         self.journal.record(
             "DEBATE",
@@ -328,14 +357,48 @@ class NSETradingCompany:
             votes=debate.votes,
             qualified_agents=qualified,
         )
+        hq_events.snapshot(
+            market.tradingsymbol,
+            f,
+            votes,
+            decision=debate.decision,
+            agreement=round(float(debate.agreement), 4),
+            conflict=round(float(debate.conflict), 4),
+            score=round(float(debate.score), 4),
+            confidence=round(float(debate.confidence), 4),
+            debate=debate.rationale,
+        )
+        if debate.challenges:
+            for challenge in debate.challenges:
+                hq_events.activity("redteam", f"{market.tradingsymbol}: {challenge}", move=True)
+        hq_events.activity(
+            "risk",
+            f"{market.tradingsymbol}: agreement={debate.agreement:.2f} conflict={debate.conflict:.2f}",
+            move=True,
+        )
         if debate.decision == "NO_TRADE":
+            hq_events.activity("chief", f"{market.tradingsymbol}: NO TRADE", move=True)
             return None
         if regime.direction and debate.direction != regime.direction and regime.confidence >= 0.70:
             self.journal.record("REGIME_BLOCK", symbol=market.tradingsymbol, regime=regime.name)
+            hq_events.activity("risk", f"{market.tradingsymbol}: blocked by strong regime mismatch", move=True)
+            hq_events.activity("chief", f"{market.tradingsymbol}: regime block", move=True)
             return None
         if debate.score < MIN_SCORE or debate.confidence < MIN_CONF:
+            hq_events.activity(
+                "risk",
+                f"{market.tradingsymbol}: score/confidence below threshold",
+                move=True,
+            )
+            hq_events.activity("chief", f"{market.tradingsymbol}: rejected by thresholds", move=True)
             return None
         stop = max(0.003, min(0.02, 2.0 * f["vol"]))
+        decision = "BUY" if debate.direction > 0 else "SELL"
+        hq_events.activity(
+            "chief",
+            f"{market.tradingsymbol}: approved {decision} confidence={debate.confidence:.2f}",
+            move=True,
+        )
         return Signal(
             market, debate.direction, debate.score, debate.confidence, stop,
             "debate-approved: " + debate.rationale,
@@ -485,6 +548,11 @@ class NSETradingCompany:
         if qty <= 0:
             return
         side = "BUY" if sig.direction > 0 else "SELL"
+        hq_events.activity(
+            "risk",
+            f"{m.tradingsymbol}: position sizing and exposure check",
+            move=True,
+        )
         self.journal.record(
             "ORDER_INTENT",
             symbol=m.tradingsymbol,
@@ -537,6 +605,11 @@ class NSETradingCompany:
                 self.journal.record("ORDER_FAILURE", symbol=m.tradingsymbol, error=repr(exc))
                 print("[angelone execution blocked]" if self.backend in {"angelone_nse", "angelone_mcx"} else "[zerodha execution blocked]", repr(exc))
         else:
+            hq_events.activity(
+                "chief",
+                f"{m.tradingsymbol}: PAPER {side} prepared (live execution disabled)",
+                move=True,
+            )
             entry = self._paper_fill_price(m.last_price, side)
             self.open_positions[m.market_id] = {
                 "market_id": m.market_id,
@@ -611,9 +684,18 @@ class NSETradingCompany:
                 print("[zerodha exit] recovered", repr(exc))
             return
 
+        hq_events.heartbeat("Trading engine cycle started")
+        hq_events.activity(
+            "research",
+            "Scanning market universe",
+            move=True,
+        )
         print("\n[%s] %s scanning..." % (datetime.now().isoformat(timespec="seconds"), "MCX" if self.backend in {"mcx","angelone_mcx"} else "NSE"))
         markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "1000")))
         print("[market] market universe scanned=", len(markets))
+        hq_events.activity("research", f"Scanned {len(markets)} markets", move=True)
+        for market_item in markets[:int(os.getenv("HQ_MARKET_PREVIEW_LIMIT", "5"))]:
+            hq_events.market(market_item.tradingsymbol, round(float(market_item.last_price), 4))
         prices = {m.market_id: m.last_price for m in markets}
         if not self.execution.enabled:
             self.feed.prefetch_history(markets, days=2, interval=os.getenv("MARKET_INTERVAL", os.getenv("NSE_INTERVAL", "5m")))
@@ -693,6 +775,18 @@ class NSETradingCompany:
             self._save_paper_state()
         if not self.execution.enabled:
             print("[paper]", self.paper_metrics(prices))
+        hq_events.status(
+            momentum="IDLE",
+            mean_reversion="IDLE",
+            event_driven="IDLE",
+            mcx="IDLE",
+            arbitrage="IDLE",
+            research="IDLE",
+            redteam="IDLE",
+            risk="IDLE",
+            chief="IDLE",
+        )
+        hq_events.heartbeat("Trading engine cycle complete")
         print(
             "[nse] provider=", self.feed.provider,
             "data_label=", self.feed.data_label,
