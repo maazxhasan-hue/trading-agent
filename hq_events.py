@@ -62,6 +62,46 @@ def market(symbol: str, value, **extra) -> None:
     emit("market", symbol=symbol, value=str(value), **extra)
 
 
+def candles(symbol: str, rows, provider=None, interval=None, **extra) -> None:
+    """Publish the exact OHLCV rows used by the engine for HQ charting."""
+    safe = []
+    for row in (rows or [])[-120:]:
+        try:
+            safe.append({
+                "time": row.get("date") or row.get("time"),
+                "open": round(float(row["open"]), 8),
+                "high": round(float(row["high"]), 8),
+                "low": round(float(row["low"]), 8),
+                "close": round(float(row["close"]), 8),
+                "volume": round(float(row.get("volume", 0) or 0), 4),
+            })
+        except (KeyError, TypeError, ValueError):
+            continue
+    emit("candles", symbol=symbol, candles=safe, provider=provider, interval=interval, **extra)
+
+
+def agent_analysis(agent: str, symbol: str, thesis: str, evidence=None, action=None,
+                   confidence=None, adaptation=None, **extra) -> None:
+    emit("agent_analysis", agent=agent, symbol=symbol, thesis=thesis,
+         evidence=evidence or [], action=action, confidence=confidence,
+         adaptation=adaptation, **extra)
+
+
+def learning(symbol=None, qualified=None, details=None, resolved=0, history=0,
+             observations=0, last_resolved=None, **extra) -> None:
+    emit(
+        "learning",
+        symbol=symbol,
+        qualified=qualified or [],
+        details=details or {},
+        resolved=int(resolved or 0),
+        history=int(history or 0),
+        observations=int(observations or 0),
+        last_resolved=last_resolved or [],
+        **extra,
+    )
+
+
 def snapshot(symbol: str, features: dict, votes: dict, decision: str | None = None, **extra) -> None:
     """Publish the actual evidence used for a market decision."""
     safe_features = {

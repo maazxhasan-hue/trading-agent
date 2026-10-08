@@ -80,6 +80,8 @@ class NSETradingCompany:
                 "Live execution requires an authorised market-data provider."
             )
         self.learning = AgentLearningStore(horizon_seconds=HORIZON)
+        self._feature_candles = {}
+        self._hq_candle_ids = set()
         self.debate = NSEPreTradeDebate(
             min_agreement=float(os.getenv("DEBATE_MIN_AGREEMENT", "0.60")),
             max_conflict=float(os.getenv("DEBATE_MAX_CONFLICT", "0.45")),
@@ -98,6 +100,7 @@ class NSETradingCompany:
         self.realized_pnl = 0.0
         self.daily_realized_pnl = 0.0
         self.paper_cycle = 0
+        self.total_paper_trades = 0
         self._load_paper_state()
 
     def _load_paper_state(self):
@@ -115,6 +118,7 @@ class NSETradingCompany:
             self.open_positions = state.get("open_positions", {})
             self.traded_today = set(state.get("traded_today", []))
             self.paper_cycle = int(state.get("paper_cycle", 0))
+            self.total_paper_trades = int(state.get("total_paper_trades", 0))
         except Exception as exc:
             print("[paper state recovered]", repr(exc))
 
@@ -135,6 +139,7 @@ class NSETradingCompany:
                     "open_positions": self.open_positions,
                     "traded_today": sorted(self.traded_today),
                     "paper_cycle": self.paper_cycle,
+                    "total_paper_trades": self.total_paper_trades,
                     "learning": self.learning.summary(),
                     "risk": self._paper_risk_snapshot(),
                     "updated_at": datetime.now().isoformat(),
@@ -152,9 +157,9 @@ class NSETradingCompany:
         ]
 
     def features(self, market):
-        rows = self.feed.history(
-            market, days=2, interval=os.getenv("MARKET_INTERVAL", os.getenv("NSE_INTERVAL", "5m"))
-        )
+        interval = os.getenv("MARKET_INTERVAL", os.getenv("NSE_INTERVAL", "5m"))
+        rows = self.feed.history(market, days=2, interval=interval)
+        self._feature_candles[market.market_id] = rows[-120:]
         closes = [float(r["close"]) for r in rows if r.get("close")]
         vols = [float(r.get("volume", 0)) for r in rows]
         if len(closes) < 30:
@@ -324,7 +329,21 @@ class NSETradingCompany:
                 f"{market.tradingsymbol}: evaluating {label} ({vote:+.2f})",
                 move=True,
             )
-        hq_events.market(market.tradingsymbol, round(float(f["price"]), 4))
+        hq_events.market(
+            market.tradingsymbol,
+            round(float(market.last_price), 8),
+            provider=getattr(self.feed, "data_label", "unknown"),
+            free_data=bool(getattr(self.feed, "is_free_data", False)),
+            exchange=getattr(market, "exchange", None),
+            quote_timestamp=getattr(market, "quote_timestamp", None),
+        )
+        if market.market_id in self._hq_candle_ids:
+            hq_events.candles(
+                market.tradingsymbol,
+                self._feature_candles.get(market.market_id, []),
+                provider=getattr(self.feed, "data_label", "unknown"),
+                interval=os.getenv("MARKET_INTERVAL", os.getenv("NSE_INTERVAL", "5m")),
+            )
         hq_events.snapshot(market.tradingsymbol, f, votes)
 
     def signal(self, market, f, votes):
@@ -448,6 +467,11 @@ class NSETradingCompany:
                     pnl=pnl,
                     exit_price=exit_price,
                 )
+                hq_events.emit("trade", action="CLOSE",
+                               symbol=position.get("tradingsymbol", market_id),
+                               side="SELL" if position["side"] == "BUY" else "BUY",
+                               quantity=position["qty"], price=round(exit_price, 4),
+                               pnl=round(pnl, 2), reason=reason, paper=True)
                 del self.open_positions[market_id]
         equity = self._paper_equity(prices)
         self.daily_pnl = self.daily_realized_pnl + (equity - self.cash - self.realized_pnl)
@@ -517,6 +541,7 @@ class NSETradingCompany:
             "drawdown_fraction": risk["drawdown_fraction"],
             "gross_notional": risk["gross_notional"],
             "gross_exposure_fraction": risk["gross_exposure_fraction"],
+            "total_paper_trades": self.total_paper_trades,
         }
 
     def paper_or_live(self, sig):
@@ -620,6 +645,10 @@ class NSETradingCompany:
                 "entry_cycle": self.paper_cycle,
             }
             self.traded_today.add(m.market_id)
+            self.total_paper_trades += 1
+            hq_events.emit("trade", action="OPEN", symbol=m.tradingsymbol, side=side,
+                           quantity=qty, price=round(entry, 4),
+                           score=round(sig.score, 4), confidence=round(sig.confidence, 4), paper=True)
             print(
                 "[PAPER_ORDER]", m.tradingsymbol, side, qty, m.last_price,
                 "score=%.3f" % sig.score, "confidence=%.2f" % sig.confidence,
@@ -692,6 +721,8 @@ class NSETradingCompany:
         )
         print("\n[%s] %s scanning..." % (datetime.now().isoformat(timespec="seconds"), "MCX" if self.backend in {"mcx","angelone_mcx"} else "NSE"))
         markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "1000")))
+        self._hq_candle_ids = {m.market_id for m in markets[:int(os.getenv("HQ_CANDLE_PREVIEW_LIMIT", "5"))]}
+        self._feature_candles.clear()
         print("[market] market universe scanned=", len(markets))
         hq_events.activity("research", f"Scanned {len(markets)} markets", move=True)
         for market_item in markets[:int(os.getenv("HQ_MARKET_PREVIEW_LIMIT", "5"))]:
@@ -715,8 +746,10 @@ class NSETradingCompany:
         if session_end and not self.execution.enabled:
             closed = self._close_all_paper_positions(prices, "session_end")
             print("[paper] session close; positions_closed=", closed)
+            metrics = self.paper_metrics(prices)
+            hq_events.emit("portfolio", **metrics)
             self._save_paper_state()
-            print("[paper]", self.paper_metrics(prices))
+            print("[paper]", metrics)
             return
 
         if self.execution.enabled:
@@ -726,7 +759,7 @@ class NSETradingCompany:
             if stale:
                 raise ZerodhaLocked(f"Live execution blocked: market data is stale for {len(stale)} symbols.")
         resolved = self.learning.resolve(prices.get)
-        qualified, _ = self.learning.qualified_agents(
+        qualified, learning_details = self.learning.qualified_agents(
             [
                 "momentum-v3",
                 "mean_reversion-v3",
@@ -734,6 +767,26 @@ class NSETradingCompany:
                 "mcx_commodity_specialist-v3",
                 "cross_market_arbitrage-v3",
             ]
+        )
+        # Send the actual learning state to HQ: forecast counts, accuracy,
+        # Brier score, recent stability, qualification and adaptive weight.
+        last_resolved = []
+        for item in self.learning.data.get("history", [])[-20:]:
+            last_resolved.append({
+                "market_id": item.get("market_id"),
+                "outcome": item.get("outcome"),
+                "realized_move": item.get("realized_move"),
+                "resolved_at": item.get("resolved_at"),
+                "directions": item.get("directions", {}),
+            })
+        hq_events.learning(
+            qualified=qualified,
+            details=learning_details,
+            resolved=resolved,
+            history=len(self.learning.data["history"]),
+            observations=self.learning.observation_count(),
+            last_resolved=last_resolved,
+            horizon_seconds=HORIZON,
         )
         print(
             "[learning] resolved=", resolved,
@@ -760,6 +813,39 @@ class NSETradingCompany:
                 if not f:
                     continue
                 votes = self.agent_votes(f, m)
+                agent_ui = {
+                    "momentum-v3": "momentum",
+                    "mean_reversion-v3": "mean_reversion",
+                    "event_driven-v3": "event_driven",
+                    "mcx_commodity_specialist-v3": "mcx",
+                    "cross_market_arbitrage-v3": "arbitrage",
+                }
+                for agent_name, vote in votes.items():
+                    ui_agent = agent_ui.get(agent_name, "research")
+                    direction = "BUY" if vote > 0.05 else "SELL" if vote < -0.05 else "NEUTRAL"
+                    stats = self.learning.stats(agent_name)
+                    weight = self.learning.weight(agent_name)
+                    adaptation = "boosted" if weight > 1.02 else "reduced" if weight < 0.98 else "baseline"
+                    evidence = []
+                    if f["r10"] > 0: evidence.append("10-bar momentum positive")
+                    elif f["r10"] < 0: evidence.append("10-bar momentum negative")
+                    if f["rsi"] >= 65: evidence.append("RSI elevated")
+                    elif f["rsi"] <= 35: evidence.append("RSI depressed")
+                    if f["breakout"] > 0: evidence.append("breakout pressure")
+                    if f["breakdown"] < 0: evidence.append("breakdown pressure")
+                    if f["volume_ratio"] > 1.25: evidence.append("volume expansion")
+                    thesis = f"{direction} thesis from live feature evidence; vote {vote:+.3f}"
+                    hq_events.agent_analysis(
+                        ui_agent, m.tradingsymbol, thesis,
+                        evidence=evidence[:4], action=direction,
+                        confidence=stats.get("recent_accuracy"),
+                        adaptation=adaptation,
+                    )
+                    hq_events.activity(
+                        ui_agent,
+                        f"{m.tradingsymbol}: {direction} thesis; {adaptation} weight",
+                        move=True,
+                    )
                 self.learn(m, f, votes)
                 sig = self.signal(m, f, votes)
                 if (
@@ -774,17 +860,19 @@ class NSETradingCompany:
         if not self.execution.enabled:
             self._save_paper_state()
         if not self.execution.enabled:
-            print("[paper]", self.paper_metrics(prices))
+            metrics = self.paper_metrics(prices)
+            hq_events.emit("portfolio", **metrics)
+            print("[paper]", metrics)
         hq_events.status(
-            momentum="IDLE",
-            mean_reversion="IDLE",
-            event_driven="IDLE",
-            mcx="IDLE",
-            arbitrage="IDLE",
-            research="IDLE",
-            redteam="IDLE",
-            risk="IDLE",
-            chief="IDLE",
+            momentum="MONITORING",
+            mean_reversion="MONITORING",
+            event_driven="MONITORING",
+            mcx="MONITORING",
+            arbitrage="MONITORING",
+            research="MONITORING",
+            redteam="MONITORING",
+            risk="MONITORING",
+            chief="MONITORING",
         )
         hq_events.heartbeat("Trading engine cycle complete")
         print(
