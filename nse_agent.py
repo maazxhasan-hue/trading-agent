@@ -101,6 +101,11 @@ class NSETradingCompany:
         self.daily_realized_pnl = 0.0
         self.paper_cycle = 0
         self.total_paper_trades = 0
+        # Paper-only evolutionary lifecycle. Losing paper trades kill the
+        # current generation; replacements inherit accumulated knowledge.
+        self.paper_generation = 1
+        self.paper_agent_alive = True
+        self.paper_agent_knowledge = []
         self._load_paper_state()
 
     def _load_paper_state(self):
@@ -119,6 +124,9 @@ class NSETradingCompany:
             self.traded_today = set(state.get("traded_today", []))
             self.paper_cycle = int(state.get("paper_cycle", 0))
             self.total_paper_trades = int(state.get("total_paper_trades", 0))
+            self.paper_generation = max(1, int(state.get("paper_generation", 1)))
+            self.paper_agent_alive = bool(state.get("paper_agent_alive", True))
+            self.paper_agent_knowledge = list(state.get("paper_agent_knowledge", []))[-1000:]
         except Exception as exc:
             print("[paper state recovered]", repr(exc))
 
@@ -140,6 +148,9 @@ class NSETradingCompany:
                     "traded_today": sorted(self.traded_today),
                     "paper_cycle": self.paper_cycle,
                     "total_paper_trades": self.total_paper_trades,
+                    "paper_generation": self.paper_generation,
+                    "paper_agent_alive": self.paper_agent_alive,
+                    "paper_agent_knowledge": self.paper_agent_knowledge[-1000:],
                     "learning": self.learning.summary(),
                     "risk": self._paper_risk_snapshot(),
                     "updated_at": datetime.now().isoformat(),
@@ -473,6 +484,7 @@ class NSETradingCompany:
                                quantity=position["qty"], price=round(exit_price, 4),
                                pnl=round(pnl, 2), reason=reason, paper=True)
                 del self.open_positions[market_id]
+                self._paper_agent_loss(market_id, pnl, reason)
         equity = self._paper_equity(prices)
         self.daily_pnl = self.daily_realized_pnl + (equity - self.cash - self.realized_pnl)
         self.peak = max(self.peak, equity)
@@ -509,6 +521,40 @@ class NSETradingCompany:
                 print("[PAPER_SESSION_EXIT]", market_id, why,
                       "pnl=%.2f" % pnl, "price=%.2f" % price)
         return len(closed)
+
+    def _paper_agent_loss(self, market_id, pnl, reason):
+        """Paper-only death -> autopsy -> inherited replacement lifecycle."""
+        if pnl >= 0 or self.execution.enabled:
+            return
+        previous = self.paper_generation
+        autopsy = {
+            "generation": previous,
+            "market_id": market_id,
+            "pnl": round(float(pnl), 2),
+            "exit_reason": reason,
+            "lesson": "review failed thesis, evidence and risk context before the next trade",
+            "timestamp": datetime.now().isoformat(),
+        }
+        self.paper_agent_alive = False
+        self.paper_agent_knowledge.append(autopsy)
+        hq_events.activity("chief", f"Paper GEN-{previous} DIED after loss {market_id} ({pnl:.2f})", move=True)
+        hq_events.agent_analysis(
+            "chief", str(market_id),
+            f"GEN-{previous} loss autopsy completed; replacement inherits accumulated knowledge",
+            evidence=[f"loss={pnl:.2f}", f"exit={reason}", f"knowledge_items={len(self.paper_agent_knowledge)}"],
+            action="REPLACE", adaptation="loss-autopsy + inherited-history + new-generation"
+        )
+        self.paper_generation = previous + 1
+        self.paper_agent_alive = True
+        hq_events.activity("chief", f"Paper GEN-{self.paper_generation} spawned with inherited knowledge", move=True)
+        self.journal.record(
+            "PAPER_AGENT_REPLACEMENT",
+            dead_generation=previous,
+            new_generation=self.paper_generation,
+            loss=round(float(pnl), 2),
+            market_id=market_id,
+            inherited_knowledge=len(self.paper_agent_knowledge),
+        )
 
     def _paper_risk_snapshot(self, prices=None):
         prices = prices or {}
@@ -730,6 +776,7 @@ class NSETradingCompany:
         prices = {m.market_id: m.last_price for m in markets}
         if not self.execution.enabled:
             self.feed.prefetch_history(markets, days=2, interval=os.getenv("MARKET_INTERVAL", os.getenv("NSE_INTERVAL", "5m")))
+            hq_events.activity("chief", f"Paper evolution GEN-{self.paper_generation}: inherited knowledge={len(self.paper_agent_knowledge)}", move=True)
 
         if today != self.day:
             if not self.execution.enabled and self.open_positions:
