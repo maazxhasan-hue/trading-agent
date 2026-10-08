@@ -468,6 +468,8 @@ class NSETradingCompany:
             if reason:
                 exit_price = self._paper_fill_price(current, "SELL" if position["side"] == "BUY" else "BUY")
                 pnl = signed * (exit_price - position["entry"]) * position["qty"]
+                fee_bps = max(0.0, float(os.getenv("PAPER_FEE_BPS", "0")))
+                pnl -= (float(position["entry"]) + exit_price) * float(position["qty"]) * fee_bps / 10000.0
                 self.realized_pnl += pnl
                 self.daily_realized_pnl += pnl
                 closed.append((market_id, reason, pnl, exit_price))
@@ -502,6 +504,8 @@ class NSETradingCompany:
             exit_side = "SELL" if position["side"] == "BUY" else "BUY"
             exit_price = self._paper_fill_price(current, exit_side)
             pnl = signed * (exit_price - position["entry"]) * position["qty"]
+            fee_bps = max(0.0, float(os.getenv("PAPER_FEE_BPS", "0")))
+            pnl -= (float(position["entry"]) + exit_price) * float(position["qty"]) * fee_bps / 10000.0
             self.realized_pnl += pnl
             self.daily_realized_pnl += pnl
             closed.append((market_id, reason, pnl, exit_price))
@@ -596,27 +600,29 @@ class NSETradingCompany:
         if capital is None or capital <= 0:
             print("[risk] no available Zerodha equity margin; no order")
             return
-        risk_cap = capital * MAX_POSITION
-        risk_per_unit = max(m.last_price * sig.stop_pct, 0.05)
+        fractional_paper = os.getenv("PAPER_FRACTIONAL_UNITS", "false").lower() == "true"
+        if fractional_paper and self.execution.enabled:
+            raise RuntimeError("PAPER_FRACTIONAL_UNITS is paper-only; refusing live execution.")
         lot_size = max(1, int(getattr(m, "lot_size", 1) or 1))
-        raw_qty = int(risk_cap / risk_per_unit)
-        qty = (raw_qty // lot_size) * lot_size
-
-        # Enforce a portfolio-wide exposure ceiling in addition to the
-        # per-position cap.
-        existing_notional = 0.0
-        for position in self.open_positions.values():
-            entry = float(position.get("entry", 0.0) or 0.0)
-            existing_notional += abs(entry * int(position.get("qty", 0) or 0))
+        existing_notional = sum(
+            abs(float(position.get("entry", 0.0) or 0.0) * float(position.get("qty", 0.0) or 0.0))
+            for position in self.open_positions.values()
+        )
         remaining_notional = max(0.0, capital * MAX_TOTAL_EXPOSURE - existing_notional)
-        if remaining_notional < m.last_price:
+        if not fractional_paper and remaining_notional < m.last_price:
             print("[risk] total exposure cap reached; no order")
             return
-
+        risk_cap = capital * MAX_POSITION
+        risk_per_unit = max(m.last_price * sig.stop_pct, 0.05)
+        raw_qty = risk_cap / risk_per_unit if fractional_paper else int(risk_cap / risk_per_unit)
         max_notional = min(capital * MAX_POSITION, remaining_notional)
-        qty = min(qty, int(max_notional / m.last_price))
-        qty = (qty // lot_size) * lot_size
+        qty = min(raw_qty, max_notional / m.last_price if fractional_paper else int(max_notional / m.last_price))
+        if fractional_paper:
+            qty = round(max(0.0, qty), 8)
+        else:
+            qty = (int(qty) // lot_size) * lot_size
         if qty <= 0:
+            print("[risk] position size is below the supported minimum; no order")
             return
         side = "BUY" if sig.direction > 0 else "SELL"
         hq_events.activity(
