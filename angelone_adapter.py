@@ -155,12 +155,22 @@ class AngelOneExecution:
         ]
 
     def quote(self, tokens, exchange="NSE"):
-        """Fetch FULL quotes, respecting SmartAPI's one-token-per-exchange request."""
+        """Fetch market quotes, using LTP mode for MCX when configured.
+
+        Angel One's MCX FULL quote endpoint can be unavailable on some
+        authorised cloud IPs while the LTP market-data mode remains healthy.
+        MCX therefore defaults to LTP mode; NSE keeps FULL as its default.
+        """
         self._ensure_session()
         out = {}
+        mode = os.getenv("ANGELONE_MARKET_DATA_MODE", "").strip().upper()
+        if not mode:
+            mode = "LTP" if exchange.upper() == "MCX" else "FULL"
+        if mode not in {"FULL", "LTP"}:
+            raise AngelOneLocked("ANGELONE_MARKET_DATA_MODE must be FULL or LTP.")
         for raw_token in tokens:
             token = str(raw_token)
-            result = self.client.getMarketData("FULL", {exchange: [token]})
+            result = self.client.getMarketData(mode, {exchange: [token]})
             if not result or not result.get("status"):
                 raise AngelOneLocked(
                     str((result or {}).get("message", "quote failed"))
