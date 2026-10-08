@@ -204,7 +204,7 @@ class NSETradingCompany:
             "price": closes[-1],
         }
 
-    def agent_votes(self, f):
+    def agent_votes(self, f, market):
         # v3 uses bounded, regime-aware signals and deliberately avoids
         # overconfident probabilities. The validation target is out-of-sample
         # directional quality, not maximizing the raw signal magnitude.
@@ -677,7 +677,7 @@ class NSETradingCompany:
                 f = self.features(m)
                 if not f:
                     continue
-                votes = self.agent_votes(f)
+                votes = self.agent_votes(f, m)
                 self.learn(m, f, votes)
                 sig = self.signal(m, f, votes)
                 if (
