@@ -864,15 +864,15 @@ class NSETradingCompany:
             hq_events.emit("portfolio", **metrics)
             print("[paper]", metrics)
         hq_events.status(
-            momentum="IDLE",
-            mean_reversion="IDLE",
-            event_driven="IDLE",
-            mcx="IDLE",
-            arbitrage="IDLE",
-            research="IDLE",
-            redteam="IDLE",
-            risk="IDLE",
-            chief="IDLE",
+            momentum="MONITORING",
+            mean_reversion="MONITORING",
+            event_driven="MONITORING",
+            mcx="MONITORING",
+            arbitrage="MONITORING",
+            research="MONITORING",
+            redteam="MONITORING",
+            risk="MONITORING",
+            chief="MONITORING",
         )
         hq_events.heartbeat("Trading engine cycle complete")
         print(
