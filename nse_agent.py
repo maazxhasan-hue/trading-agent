@@ -1144,26 +1144,10 @@ class NSETradingCompany:
             # the HQ tournament to RUNNING on every engine cycle.
             controller = getattr(self, "gen_evolution", None)
             if controller is not None:
+                from trading_city import sync_tournament_from_evolution
                 evolution = dict(getattr(controller, "state", {}) or {})
-                evolution_status = str(evolution.get("status") or "RUNNING").upper()
-                champion_generation = evolution.get("champion_generation")
-                champion_id = (
-                    "GEN-%s" % champion_generation
-                    if champion_generation is not None else None
-                )
-                self.city.update_tournament(
-                    stage="GEN_TOURNAMENT",
-                    status=evolution_status,
-                    champion_id=champion_id,
-                )
-                hq_events.emit(
-                    "gen_tournament",
-                    status=evolution_status,
-                    champion_generation=champion_generation,
-                    result=evolution.get("result"),
-                    deadline_at=evolution.get("deadline_at"),
-                    session_generations=evolution.get("session_generations", []),
-                )
+                tournament_event = sync_tournament_from_evolution(self.city, evolution)
+                hq_events.emit("gen_tournament", **tournament_event)
             else:
                 self.city.update_tournament(stage="GEN_TOURNAMENT", status="RUNNING")
             hq_events.emit("trading_city", **self.city.snapshot())
