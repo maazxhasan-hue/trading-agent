@@ -110,7 +110,7 @@ def test_non_finite_safety_values_always_block(monkeypatch, tmp_path, override):
 
 def test_non_finite_risk_limit_rejected_at_startup(monkeypatch, tmp_path):
     monkeypatch.setenv("LIVE_MAX_POSITION_FRACTION", "nan")
-    with pytest.raises(ValueError, match="finite and positive"):
+    with pytest.raises(ValueError, match="invalid values"):
         GuardedLiveOrderGate(str(tmp_path / "KILL"))
 
 
