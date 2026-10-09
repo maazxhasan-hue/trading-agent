@@ -1,9 +1,8 @@
-"""Bounded GEN evolution controller for the MCX paper tournament.
+"""Durable 3-hour GEN controller for the MCX paper tournament.
 
-This controller manages tournament generations only. It does not create trading
-signals, call a broker, deploy code, or enable live orders. The 3-hour deadline
-selects a champion only when the existing ledger's one-hour qualification rules
-are satisfied; otherwise the result is explicitly NO_QUALIFIED_CHAMPION.
+The controller manages generation lifecycle only. It does not create signals,
+call a broker, deploy code, or enable live orders. It selects only generations
+created for this run and reports NO_QUALIFIED_CHAMPION when none pass the ledger.
 """
 from __future__ import annotations
 
@@ -23,7 +22,7 @@ def _utc(value=None):
 
 
 class MCXGenEvolutionController:
-    """Maintain a fixed-size population, lineage, deadline and durable result."""
+    """Maintain a fixed active population, lineage, deadline and durable result."""
 
     def __init__(
         self,
@@ -32,9 +31,11 @@ class MCXGenEvolutionController:
         population_size=5,
         tournament_seconds=10800,
         target_hourly_net_pnl=1000.0,
+        portfolios=None,
         clock=_utc,
     ):
         self.ledger = ledger
+        self.portfolios = portfolios
         self.state_path = state_path
         self.population_size = max(1, int(population_size))
         self.tournament_seconds = int(tournament_seconds)
@@ -51,7 +52,7 @@ class MCXGenEvolutionController:
         try:
             with open(self.state_path, encoding="utf-8") as handle:
                 value = json.load(handle)
-            if isinstance(value, dict) and value.get("started_at"):
+            if isinstance(value, dict) and value.get("started_at") and isinstance(value.get("session_generations"), list):
                 return value
         except (OSError, ValueError, TypeError):
             pass
@@ -62,6 +63,7 @@ class MCXGenEvolutionController:
             "tournament_seconds": self.tournament_seconds,
             "population_size": self.population_size,
             "target_hourly_net_pnl": self.target_hourly_net_pnl,
+            "session_generations": [],
             "status": "RUNNING",
             "champion_generation": None,
             "result": None,
@@ -86,14 +88,20 @@ class MCXGenEvolutionController:
         return self.ledger.state.setdefault("generations", {})
 
     def active_generations(self):
+        session_ids = {int(value) for value in self.state["session_generations"]}
         return sorted(
             int(key) for key, record in self._records().items()
-            if record.get("stage") == "GEN_TOURNAMENT" and record.get("status") == "ACTIVE"
+            if int(key) in session_ids
+            and record.get("stage") == "GEN_TOURNAMENT"
+            and record.get("status") == "ACTIVE"
         )
 
     def _new_generation(self, parent_generation=None):
         generation = max((int(key) for key in self._records()), default=0) + 1
         record = self.ledger.ensure_generation(generation, parent_generation=parent_generation)
+        self.state["session_generations"].append(generation)
+        if self.portfolios is not None:
+            self.portfolios.ensure_generation(generation)
         self.state["replacement_history"].append({
             "generation": generation,
             "parent_generation": parent_generation,
@@ -104,29 +112,63 @@ class MCXGenEvolutionController:
         return record
 
     def replenish(self):
-        """Replace retired agents while running; never replace a qualified champion."""
+        """Replace retired agents while running; only this run's population counts."""
         if self.state.get("status") != "RUNNING":
             return self.active_generations()
         active = self.active_generations()
+        session_ids = {int(value) for value in self.state["session_generations"]}
         retired = sorted(
-            (int(key), rec) for key, rec in self._records().items()
-            if rec.get("status") == "RETIRED" and rec.get("stage") == "RETIRED"
+            int(key) for key, rec in self._records().items()
+            if int(key) in session_ids and rec.get("status") == "RETIRED" and rec.get("stage") == "RETIRED"
         )
-        parent = retired[-1][0] if retired else None
+        parent = retired[-1] if retired else None
         while len(active) < self.population_size:
             record = self._new_generation(parent_generation=parent)
             active.append(int(record["generation"]))
             parent = int(record["generation"])
         return sorted(active)
 
+    def _select_session_champion(self, now):
+        candidates = []
+        for generation in self.state["session_generations"]:
+            record = self._records().get(str(int(generation)))
+            if not record or record.get("stage") != "GEN_TOURNAMENT":
+                continue
+            card = self.ledger.scorecard(int(generation), now=now)
+            if card.get("promotion_eligible"):
+                candidates.append((
+                    float(card["net_pnl"]),
+                    -float(card["max_drawdown_fraction"]),
+                    int(card["trades"]),
+                    int(generation),
+                    card,
+                ))
+        if not candidates:
+            return None
+        _, _, _, winner, card = max(candidates)
+        record = self._records()[str(winner)]
+        record["status"] = "PROMOTION_PENDING"
+        self.ledger.state["champion_generation"] = winner
+        self.ledger.state.setdefault("promotions", []).append({
+            "generation": winner,
+            "from": "GEN_TOURNAMENT",
+            "to": "ANGELONE_PAPER_VALIDATION",
+            "status": "PENDING",
+            "created_at": now.isoformat(),
+        })
+        save = getattr(self.ledger, "_save", None)
+        if callable(save):
+            save()
+        return {"generation": winner, "scorecard": card, "next_stage": "ANGELONE_PAPER_VALIDATION", "status": "PENDING"}
+
     def tick(self):
-        """Advance the controller and return a dashboard-safe status snapshot."""
+        """Advance lifecycle; Angel One validation and live orders remain disabled."""
         now = self.clock()
         if self.state.get("status") == "RUNNING":
             self.replenish()
             deadline = _utc(self.state["deadline_at"])
             if now >= deadline:
-                champion = self.ledger.select_champion(now=now)
+                champion = self._select_session_champion(now)
                 if champion:
                     self.state["status"] = "CHAMPION_SELECTED"
                     self.state["champion_generation"] = int(champion["generation"])
@@ -147,6 +189,7 @@ class MCXGenEvolutionController:
             "deadline_at": self.state["deadline_at"],
             "seconds_remaining": max(0, int((deadline - now).total_seconds())),
             "active_generations": self.active_generations(),
+            "session_generations": list(self.state["session_generations"]),
             "champion_generation": self.state.get("champion_generation"),
             "result": self.state.get("result"),
             "live_orders_enabled": False,
