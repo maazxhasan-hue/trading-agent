@@ -1156,13 +1156,14 @@ class NSETradingCompany:
                     status=evolution_status,
                     champion_id=champion_id,
                 )
-                hq_events.emit("gen_tournament", **controller.tick() if False else {
-                    "status": evolution_status,
-                    "champion_generation": champion_generation,
-                    "result": evolution.get("result"),
-                    "deadline_at": evolution.get("deadline_at"),
-                    "session_generations": evolution.get("session_generations", []),
-                })
+                hq_events.emit(
+                    "gen_tournament",
+                    status=evolution_status,
+                    champion_generation=champion_generation,
+                    result=evolution.get("result"),
+                    deadline_at=evolution.get("deadline_at"),
+                    session_generations=evolution.get("session_generations", []),
+                )
             else:
                 self.city.update_tournament(stage="GEN_TOURNAMENT", status="RUNNING")
             hq_events.emit("trading_city", **self.city.snapshot())
