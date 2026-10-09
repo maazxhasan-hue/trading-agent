@@ -15,7 +15,7 @@ os.environ.setdefault("AGENT_LEARNING_FILE", "data/mcx_agent_learning.json")
 os.environ.setdefault("MARKET_INTERVAL", "5m")
 os.environ.setdefault("MCX_MIN_CONFIDENCE", "0.58")
 os.environ.setdefault("MCX_MIN_SCORE", "0.60")
-os.environ.setdefault("MCX_SYMBOL_FAMILIES", "GOLD,GOLDM,SILVER,SILVERM,CRUDEOIL,CRUDEOILM,NATURALGAS,NATURALGASM,COPPER,ZINC")
+os.environ.setdefault("MCX_SYMBOL_FAMILIES", "ALL")
 
 from nse_agent import NSETradingCompany
 
