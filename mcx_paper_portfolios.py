@@ -168,7 +168,10 @@ class MCXPaperPortfolioBook:
         opened = False
         reason = "no_signal"
         if position is None and direction:
-            used = sum(self._notional(p) for p in portfolio["positions"].values())
+            used = sum(
+                abs(float(p.get("last_price", p["reference_entry_price"])) * int(p["quantity"]))
+                for p in portfolio["positions"].values()
+            )
             unrealized = 0.0
             for open_market_id, open_position in portfolio["positions"].items():
                 mark = price if open_market_id == market_id else float(
