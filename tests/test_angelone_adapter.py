@@ -74,6 +74,32 @@ def test_angel_one_mcx_defaults_to_paper_mode(monkeypatch):
     assert broker.status()["backend"] == "angelone_mcx"
 
 
+def test_mcx_live_order_is_blocked_until_protective_exits_are_verified(monkeypatch):
+    monkeypatch.delenv("MCX_LIVE_EXIT_PROTECTION_VERIFIED", raising=False)
+    broker = AngelOneExecution.__new__(AngelOneExecution)
+    broker.enabled = True
+    broker.armed = True
+    broker.cloud_runtime = True
+    broker.live_runtime_approved = True
+    broker.backend = "angelone_mcx"
+    broker.client = None
+    request = OrderRequest(
+        tradingsymbol="GOLDM26OCTFUT",
+        symboltoken="999",
+        exchange="MCX",
+        transaction_type="BUY",
+        quantity=1,
+        price=100.0,
+        product="CARRYFORWARD",
+    )
+    try:
+        broker.place_limit(request)
+    except AngelOneLocked as exc:
+        assert "protective exit handling" in str(exc)
+    else:
+        raise AssertionError("MCX live orders must remain blocked without verified protective exits")
+
+
 def test_mcx_exchange_is_explicit_in_requests():
     import inspect
     assert "exchange" in inspect.signature(AngelOneExecution.quote).parameters
