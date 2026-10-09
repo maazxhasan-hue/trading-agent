@@ -63,7 +63,10 @@ class MCXGenEvolutionController:
             "tournament_seconds": self.tournament_seconds,
             "population_size": self.population_size,
             "target_hourly_net_pnl": self.target_hourly_net_pnl,
-            "session_generations": sorted(\n                int(key) for key, record in self.ledger.state.get("generations", {}).items()\n                if record.get("stage") == "GEN_TOURNAMENT" and record.get("status") == "ACTIVE"\n            ),
+            "session_generations": sorted(
+                int(key) for key, record in self.ledger.state.get("generations", {}).items()
+                if record.get("stage") == "GEN_TOURNAMENT" and record.get("status") == "ACTIVE"
+            ),
             "status": "RUNNING",
             "champion_generation": None,
             "result": None,
