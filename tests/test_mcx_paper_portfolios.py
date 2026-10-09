@@ -37,11 +37,11 @@ class MCXPaperPortfolioBookTests(unittest.TestCase):
         self.assertFalse(first["live_orders_enabled"])
 
     def test_affordable_synthetic_unit_can_open_and_close_on_opposite_signal(self):
-        market = {**self.market, "last_price": 10, "lot_size": 1}
+        market = {**self.market, "last_price": 1, "lot_size": 1}
         result = self.book.process_snapshot(1, market, 1)
         self.assertTrue(result["opened"])
         self.assertEqual(self.book.snapshot(1)["open_positions"], 1)
-        closed = self.book.process_snapshot(1, {**market, "last_price": 11}, -1)
+        closed = self.book.process_snapshot(1, {**market, "last_price": 1.1}, -1)
         self.assertEqual(len(closed["closed_trades"]), 1)
         self.assertEqual(closed["closed_trades"][0]["reason"], "opposite_signal")
         self.assertGreater(closed["closed_trades"][0]["net_pnl"], 0)
