@@ -74,11 +74,27 @@ class GenEvolutionTests(unittest.TestCase):
 
     def test_old_generations_are_not_part_of_new_session(self):
         self.ledger.ensure_generation(99)
+        self.ledger.state["generations"]["99"]["status"] = "RETIRED"
+        self.ledger.state["generations"]["99"]["stage"] = "RETIRED"
         self.controller.replenish()
         self.ledger.eligible[99] = {"promotion_eligible": True, "net_pnl": 5000.0, "max_drawdown_fraction": 0.0, "trades": 10}
         self.now += timedelta(hours=3)
         state = self.controller.tick()
         self.assertNotEqual(state["champion_generation"], 99)
+
+    def test_retired_champion_starts_new_paper_evolution_session(self):
+        self.ledger.eligible[1] = {"promotion_eligible": True, "net_pnl": 1000.0, "max_drawdown_fraction": 0.05, "trades": 3}
+        self.now += timedelta(hours=3)
+        state = self.controller.tick()
+        self.assertEqual(state["status"], "CHAMPION_RUNNING")
+        winner = state["champion_generation"]
+        self.ledger.state["generations"][str(winner)]["status"] = "RETIRED"
+        self.ledger.state["generations"][str(winner)]["stage"] = "RETIRED"
+        self.now += timedelta(minutes=1)
+        state = self.controller.tick()
+        self.assertEqual(state["status"], "RUNNING")
+        self.assertIsNone(state["champion_generation"])
+        self.assertEqual(len(state["active_generations"]), 2)
 
     def test_restart_preserves_original_deadline_and_population(self):
         self.controller.replenish()
