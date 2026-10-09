@@ -32,6 +32,7 @@ from mcx_tournament import TournamentLedger
 from mcx_paper_portfolios import MCXPaperPortfolioBook
 from mcx_paper_tournament import MCXPaperTournamentBridge
 from mcx_gen_evolution import MCXGenEvolutionController
+from trading_city import TradingCity
 from zerodha_order_manager import ZerodhaOrderManager, OrderLifecycleError
 from angelone_order_manager import AngelOneOrderManager
 import hq_events
@@ -67,6 +68,14 @@ class NSETradingCompany:
     def __init__(self):
         backend = os.getenv("TRADING_BACKEND", "zerodha_nse").lower()
         self.backend = backend
+        self.city = TradingCity(os.getenv("TRADING_CITY_STATE_FILE", "data/trading_city_state.json"))
+        for agent_id, role in (
+            ("research", "market_research"), ("momentum", "momentum"),
+            ("mean_reversion", "mean_reversion"), ("event_driven", "event_research"),
+            ("redteam", "adversarial_review"), ("risk", "risk_gate"),
+            ("chief", "orchestration"),
+        ):
+            self.city.register_agent(agent_id, role, "IDLE")
         if backend == "mcx":
             self.feed = MCXPublicFeed()
             self.execution = ZerodhaExecution()
@@ -1115,6 +1124,12 @@ class NSETradingCompany:
             risk="MONITORING",
             chief="MONITORING",
         )
+        try:
+            self.city.update_tournament(stage="GEN_TOURNAMENT", status="RUNNING")
+            hq_events.emit("trading_city", **self.city.snapshot())
+        except Exception as city_error:
+            self.city.record_error(str(city_error))
+            hq_events.emit("trading_city_error", error=str(city_error)[:300])
         hq_events.heartbeat("Trading engine cycle complete")
         print(
             "[nse] provider=", self.feed.provider,
