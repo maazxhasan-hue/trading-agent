@@ -145,6 +145,7 @@ class MCXPaperPortfolioBook:
         closed = []
         position = portfolio["positions"].get(market_id)
         if position:
+            position["last_price"] = price
             side_sign = 1 if position["direction"] > 0 else -1
             move = (price / float(position["reference_entry_price"]) - 1.0) * side_sign
             held = portfolio["cycle"] - int(position["entry_cycle"])
@@ -199,6 +200,7 @@ class MCXPaperPortfolioBook:
                         "quantity": quantity,
                         "entry_price": entry_price,
                         "reference_entry_price": price,
+                        "last_price": price,
                         "entry_cycle": portfolio["cycle"],
                         "stop_pct": stop_pct,
                     }
