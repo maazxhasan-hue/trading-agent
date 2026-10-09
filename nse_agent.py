@@ -919,7 +919,8 @@ class NSETradingCompany:
         return True
 
     def cycle(self):
-        if os.getenv("LIVE_KILL_SWITCH", "false").lower() == "true":            self.journal.record("KILL_SWITCH", reason="LIVE_KILL_SWITCH")
+        if os.getenv("LIVE_KILL_SWITCH", "false").lower() == "true":
+            self.journal.record("KILL_SWITCH", reason="LIVE_KILL_SWITCH")
             print("[risk] live kill switch active; no cycle executed")
             return
         if self.execution.enabled and not self._reconcile_live_state():
