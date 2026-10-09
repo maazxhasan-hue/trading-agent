@@ -67,17 +67,21 @@ class AngelOneMCXFeed:
             x.strip().upper()
             for x in os.getenv(
                 "MCX_SYMBOL_FAMILIES",
-                "GOLD,GOLDM,SILVER,SILVERM,CRUDEOIL,CRUDEOILM,NATURALGAS,NATURALGASM,COPPER,ZINC",
+                "ALL",
             ).split(",")
             if x.strip()
         }
+        # ALL (or *) means every supported MCX futures family in Angel One's
+        # instrument master, not options or expired contracts. A narrow list
+        # remains available for targeted testing.
+        all_families = not allowed or "ALL" in allowed or "*" in allowed
         selected = {}
         for row in rows:
             symbol = str(row.get("tradingsymbol") or "").upper()
             kind = str(row.get("instrument_type") or "").upper()
             if not row.get("instrument_token") or kind not in {"FUTCOM", "FUTIDX", "FUT"}:
                 continue
-            if allowed and not any(symbol.startswith(name) for name in allowed):
+            if not all_families and not any(symbol.startswith(name) for name in allowed):
                 continue
             selected[symbol] = row
         self._instruments = selected
