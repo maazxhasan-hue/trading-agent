@@ -53,7 +53,8 @@ class MCXPaperPortfolioBookTests(unittest.TestCase):
         self.assertEqual(reloaded.snapshot(5)["cash"], 999)
 
     def test_missing_price_does_not_fabricate_generation_exit(self):
-        market = {**self.market, "last_price": 10, "lot_size": 1}
+        # Keep the unit price within the ₹6 position cap so a virtual position opens.
+        market = {**self.market, "last_price": 1, "lot_size": 1}
         self.book.process_snapshot(1, market, 1)
         closed = self.book.close_generation(1, {}, reason="retired")
         self.assertEqual(closed, [])
