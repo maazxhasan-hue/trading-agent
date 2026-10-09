@@ -1,0 +1,31 @@
+[Unit]
+Description=Trading Agent paper-first engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=trading-agent
+Group=trading-agent
+WorkingDirectory=/opt/trading-agent
+EnvironmentFile=-/etc/trading-agent/trading-agent.env
+Environment=LIVE_TRADING=false
+Environment=ANGELONE_READONLY=true
+Environment=MCX_GEN_POPULATION_SIZE=5
+Environment=MCX_GEN_STARTING_CAPITAL=100
+Environment=MAX_POSITION_FRACTION=0.06
+Environment=MAX_TOTAL_EXPOSURE_FRACTION=0.30
+Environment=MCX_GEN_TOURNAMENT_SECONDS=10800
+Environment=PAPER_TOURNAMENT_TARGET_PNL=1000
+ExecStart=/opt/trading-agent/.venv/bin/python /opt/trading-agent/nse_agent.py
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/trading-agent/data
+
+[Install]
+WantedBy=multi-user.target
