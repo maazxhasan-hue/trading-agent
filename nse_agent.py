@@ -856,7 +856,7 @@ class NSETradingCompany:
                 "MARKETS_PER_CYCLE",
                 os.getenv(
                     "NSE_RESEARCH_MARKETS_PER_CYCLE",
-                    "25" if self.execution.enabled else "1000",
+                    "1000" if self.execution.enabled else "1000",
                 ),
             )
         )
