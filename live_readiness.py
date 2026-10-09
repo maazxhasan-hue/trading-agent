@@ -36,6 +36,7 @@ def audit() -> dict:
         "live_arm_gate": armed,
         "angelone_credentials_configured": api_configured,
         "static_ip_configured": static_ip_configured,
+        "mcx_protective_exit_gate": _enabled("MCX_LIVE_EXIT_PROTECTION_VERIFIED"),
         "external_live_data_entitlement": provider_authorized,
         "final_live_approval": False,
     }
@@ -51,6 +52,8 @@ def audit() -> dict:
         blockers.append("Angel One credentials are not configured in the runtime.")
     if not static_ip_configured:
         blockers.append("Registered Angel One static public IP is not configured.")
+    if not _enabled("MCX_LIVE_EXIT_PROTECTION_VERIFIED"):
+        blockers.append("Protective exit handling is not independently verified; MCX live orders remain blocked.")
     blockers.append("Paper-performance validation must pass before any live approval.")
     blockers.append("Broker order/fill reconciliation must be verified before any live approval.")
     blockers.append("Instrument quantity, notional budget, available funds, margin, and charges must be verified before every order.")
