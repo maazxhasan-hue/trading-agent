@@ -85,7 +85,7 @@ def test_previous_trading_day_snapshot_fails_closed(tmp_path):
     day1 = datetime(2026, 10, 8, 12, 0, tzinfo=ZoneInfo("Asia/Kolkata")).timestamp()
     day2 = datetime(2026, 10, 9, 12, 0, tzinfo=ZoneInfo("Asia/Kolkata")).timestamp()
     clock = [day1]
-    store = DurableRiskStateStore(tmp_path / "risk.sqlite3", clock=lambda: clock[0])
+    store = DurableRiskStateStore(tmp_path / "risk.sqlite3", clock=lambda: clock[0], max_age_seconds=200000)
     store.record_snapshot(base_snapshot(), source_verified=True)
     clock[0] = day2
     with pytest.raises(LiveOrderEvidenceUnavailable, match="different trading day"):
