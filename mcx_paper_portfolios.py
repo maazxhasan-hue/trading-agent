@@ -167,8 +167,17 @@ class MCXPaperPortfolioBook:
         opened = False
         reason = "no_signal"
         if position is None and direction:
-            equity = float(portfolio["cash"])
             used = sum(self._notional(p) for p in portfolio["positions"].values())
+            unrealized = 0.0
+            for open_market_id, open_position in portfolio["positions"].items():
+                mark = price if open_market_id == market_id else float(
+                    open_position.get("last_price", open_position["reference_entry_price"])
+                )
+                sign = 1 if open_position["direction"] > 0 else -1
+                unrealized += (mark - float(open_position["entry_price"])) * int(open_position["quantity"]) * sign
+            # Equity includes reserved position notional and unrealized P&L; the
+            # next 6% cap compounds from current equity, not the reduced free cash.
+            equity = max(0.0, float(portfolio["cash"]) + used + unrealized)
             max_notional = min(
                 equity * self.max_position_fraction,
                 max(0.0, equity * self.max_total_exposure_fraction - used),
