@@ -29,6 +29,8 @@ from nse_debate import NSEPreTradeDebate
 from nse_regime import classify as classify_regime
 from trade_journal import TradeJournal
 from mcx_tournament import TournamentLedger
+from mcx_paper_portfolios import MCXPaperPortfolioBook
+from mcx_paper_tournament import MCXPaperTournamentBridge
 from zerodha_order_manager import ZerodhaOrderManager, OrderLifecycleError
 from angelone_order_manager import AngelOneOrderManager
 import hq_events
@@ -121,6 +123,23 @@ class NSETradingCompany:
             )
             self.tournament.ensure_generation(self.paper_generation,
                 parent_generation=self.paper_generation - 1 if self.paper_generation > 1 else None)
+            self.mcx_paper_bridge = None
+            if not self.execution.enabled:
+                self.mcx_portfolios = MCXPaperPortfolioBook(
+                    path=os.getenv("MCX_GEN_PORTFOLIOS_FILE", "data/mcx_gen_portfolios.json"),
+                    starting_cash=float(os.getenv("MCX_GEN_STARTING_CAPITAL", "100")),
+                    max_position_fraction=MAX_POSITION,
+                    max_total_exposure_fraction=MAX_TOTAL_EXPOSURE,
+                    slippage_bps=float(os.getenv("PAPER_SLIPPAGE_BPS", "5")),
+                    fee_bps=float(os.getenv("PAPER_FEE_BPS", "2")),
+                    max_hold_cycles=PAPER_MAX_HOLD_CYCLES,
+                )
+                self.mcx_paper_bridge = MCXPaperTournamentBridge(
+                    self.tournament,
+                    self.mcx_portfolios,
+                    population_size=int(os.getenv("MCX_GEN_POPULATION_SIZE", "5")),
+                    max_quote_age_seconds=MAX_LIVE_DATA_AGE,
+                )
 
     def _load_paper_state(self):
         try:
@@ -449,6 +468,48 @@ class NSETradingCompany:
             features=dict(f),
             agent_votes=dict(votes),
         )
+
+    def _mcx_generation_signal(self, generation, market):
+        """Deterministic per-generation strategy variant; paper mode only."""
+        features = self.features(market)
+        if not features:
+            return 0
+        votes = self.agent_votes(features, market)
+        # GENs use different strategy mixes, not the same copied signal.
+        variants = (
+            {"momentum-v3": 0.40, "mean_reversion-v3": 0.10, "event_driven-v3": 0.20, "mcx_commodity_specialist-v3": 0.20, "cross_market_arbitrage-v3": 0.10},
+            {"momentum-v3": 0.15, "mean_reversion-v3": 0.40, "event_driven-v3": 0.10, "mcx_commodity_specialist-v3": 0.20, "cross_market_arbitrage-v3": 0.15},
+            {"momentum-v3": 0.20, "mean_reversion-v3": 0.10, "event_driven-v3": 0.40, "mcx_commodity_specialist-v3": 0.20, "cross_market_arbitrage-v3": 0.10},
+            {"momentum-v3": 0.15, "mean_reversion-v3": 0.15, "event_driven-v3": 0.10, "mcx_commodity_specialist-v3": 0.45, "cross_market_arbitrage-v3": 0.15},
+            {"momentum-v3": 0.20, "mean_reversion-v3": 0.15, "event_driven-v3": 0.15, "mcx_commodity_specialist-v3": 0.15, "cross_market_arbitrage-v3": 0.35},
+        )
+        weights = variants[(int(generation) - 1) % len(variants)]
+        score = sum(votes.get(name, 0.0) * weight for name, weight in weights.items())
+        if abs(score) < float(os.getenv("MCX_GEN_SIGNAL_THRESHOLD", "0.18")):
+            return 0
+        return {"direction": 1 if score > 0 else -1, "stop_pct": max(0.003, min(0.02, 2.0 * features["vol"]))}
+
+    def _run_mcx_tournament_paper_cycle(self, markets):
+        bridge = getattr(self, "mcx_paper_bridge", None)
+        if bridge is None or self.execution.enabled:
+            return None
+        # Bound expensive candle-history calls per GEN; full market discovery
+        # remains separate from the configured strategy-evaluation budget.
+        limit = max(1, int(os.getenv("MCX_TOURNAMENT_MARKETS_PER_CYCLE", "50")))
+        selected = list(markets[:limit])
+        try:
+            result = bridge.run_cycle(
+                selected,
+                self._mcx_generation_signal,
+                quote_age_seconds=getattr(self.feed, "freshness_seconds", None),
+            )
+            self.journal.record("MCX_GEN_PAPER_CYCLE", **result)
+            print("[MCX_GEN_PAPER_CYCLE]", json.dumps(result, sort_keys=True))
+            return result
+        except Exception as exc:
+            self.journal.record("MCX_GEN_PAPER_CYCLE_BLOCKED", error=repr(exc))
+            print("[MCX_GEN_PAPER_CYCLE] blocked", repr(exc))
+            return None
 
     def _paper_fill_price(self, price, side):
         slip = PAPER_SLIPPAGE_BPS / 10000.0
@@ -1009,6 +1070,8 @@ class NSETradingCompany:
                     self.paper_or_live(sig)
             except Exception as exc:
                 print("[nse cycle recovered]", m.tradingsymbol, repr(exc))
+        if self.backend in {"mcx", "angelone_mcx"} and not self.execution.enabled:
+            self._run_mcx_tournament_paper_cycle(markets)
         self.learning._save()
         if not self.execution.enabled:
             self._save_paper_state()
