@@ -501,7 +501,10 @@ class NSETradingCompany:
             result = bridge.run_cycle(
                 selected,
                 self._mcx_generation_signal,
-                quote_age_seconds=getattr(self.feed, "freshness_seconds", None),
+                quote_age_seconds=(
+                    getattr(self.feed, "freshness_seconds", None)
+                    if self.backend == "angelone_mcx" else None
+                ),
             )
             self.journal.record("MCX_GEN_PAPER_CYCLE", **result)
             print("[MCX_GEN_PAPER_CYCLE]", json.dumps(result, sort_keys=True))
