@@ -141,6 +141,7 @@ class NSETradingCompany:
                     self.mcx_portfolios,
                     population_size=int(os.getenv("MCX_GEN_POPULATION_SIZE", "5")),
                     max_quote_age_seconds=MAX_LIVE_DATA_AGE,
+                    manage_replacements=False,
                 )
                 self.gen_evolution = MCXGenEvolutionController(
                     self.tournament,
