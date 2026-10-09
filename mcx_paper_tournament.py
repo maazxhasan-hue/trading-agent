@@ -18,11 +18,13 @@ class MCXPaperTournamentBridge:
         portfolios: MCXPaperPortfolioBook,
         population_size: int = 5,
         max_quote_age_seconds: float = 10.0,
+        manage_replacements: bool = True,
     ):
         self.ledger = ledger
         self.portfolios = portfolios
         self.population_size = max(1, int(population_size))
         self.max_quote_age_seconds = max(0.0, float(max_quote_age_seconds))
+        self.manage_replacements = bool(manage_replacements)
         self._ensure_population()
 
     def active_generations(self):
@@ -117,14 +119,9 @@ class MCXPaperTournamentBridge:
                     more = self.portfolios.close_generation(
                         generation, prices, reason="generation_retired"
                     )
-                    for extra in more:
-                        self.ledger.record_trade(
-                            generation,
-                            float(extra["gross_pnl"]),
-                            fees=float(extra["fees"]),
-                            slippage=float(extra["slippage"]),
-                            timestamp=extra["closed_at"],
-                        )
+                    # The first net loss retires this GEN. Remaining positions are
+                    # closed in the paper book for accounting, but cannot add
+                    # post-retirement trades to the tournament ledger.
                     break
             results.append({
                 "generation": generation,
@@ -135,7 +132,8 @@ class MCXPaperTournamentBridge:
                 "portfolio": self.portfolios.snapshot(generation, prices),
                 "status": self.ledger.state["generations"][str(generation)]["status"],
             })
-        self._ensure_population()
+        if self.manage_replacements:
+            self._ensure_population()
         return {
             "results": results,
             "active_generations": self.active_generations(),
