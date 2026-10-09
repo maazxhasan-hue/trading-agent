@@ -7,6 +7,7 @@ data, collect() raises LiveOrderEvidenceUnavailable and no order can be approved
 """
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Callable
 from typing import Any
@@ -59,6 +60,8 @@ class AngelOneLiveEvidenceCollector:
         self.protective_exit_provider = protective_exit_provider
         self.reconciliation_provider = reconciliation_provider
         self.max_quote_age_seconds = float(max_quote_age_seconds)
+        if not math.isfinite(self.max_quote_age_seconds) or self.max_quote_age_seconds <= 0:
+            raise ValueError("max_quote_age_seconds must be finite and positive")
         self.clock = clock
 
     def collect(self, request) -> dict:
@@ -92,7 +95,7 @@ class AngelOneLiveEvidenceCollector:
 
         if not all(isinstance(item, dict) for item in (quote, instrument, margin, risk)):
             raise LiveOrderEvidenceUnavailable("evidence providers returned invalid data")
-        required_quote = ("last_price", "timestamp", "authorized")
+        required_quote = ("last_price", "timestamp", "authorized", "symboltoken", "exchange")
         required_instrument = ("lot_size", "actual_quantity_verified")
         required_margin = ("verified", "required_margin", "available_margin")
         required_risk = (
@@ -112,8 +115,14 @@ class AngelOneLiveEvidenceCollector:
                 )
 
         try:
-            age = self.clock() - float(quote["timestamp"])
-            lot = int(instrument["lot_size"])
+            now = float(self.clock())
+            quote_timestamp = float(quote["timestamp"])
+            quote_price = float(quote["last_price"])
+            age = now - quote_timestamp
+            lot_value = float(instrument["lot_size"])
+            lot = int(lot_value)
+            if not lot_value.is_integer():
+                raise ValueError("lot size must be an integer")
             required_margin_value = float(margin["required_margin"])
             available_margin = float(margin["available_margin"])
             equity = float(risk["equity"])
@@ -121,12 +130,28 @@ class AngelOneLiveEvidenceCollector:
             daily_pnl = float(risk["daily_pnl"])
             peak_equity = float(risk["peak_equity"])
             current_equity = float(risk["current_equity"])
-            orders_today = int(risk["orders_today"])
+            orders_today_value = float(risk["orders_today"])
+            orders_today = int(orders_today_value)
+            numeric_values = (now, quote_timestamp, quote_price, required_margin_value,
+                              available_margin, equity, current_exposure, daily_pnl,
+                              peak_equity, current_equity, orders_today_value)
+            if not all(math.isfinite(value) for value in numeric_values):
+                raise ValueError("evidence contains non-finite numeric values")
+            if not orders_today_value.is_integer():
+                raise ValueError("order count must be an integer")
         except (TypeError, ValueError, OverflowError) as exc:
             raise LiveOrderEvidenceUnavailable("evidence contains invalid numeric values") from exc
 
         if quote["authorized"] is not True:
             raise LiveOrderEvidenceUnavailable("quote is not verified as authorized broker data")
+        request_token = str(getattr(request, "symboltoken", "") or "").strip()
+        request_exchange = str(getattr(request, "exchange", "") or "").strip().upper()
+        if not request_token or str(quote["symboltoken"]).strip() != request_token:
+            raise LiveOrderEvidenceUnavailable("quote token does not match the requested instrument")
+        if not request_exchange or str(quote["exchange"]).strip().upper() != request_exchange:
+            raise LiveOrderEvidenceUnavailable("quote exchange does not match the requested instrument")
+        if quote_price <= 0:
+            raise LiveOrderEvidenceUnavailable("broker quote price must be positive")
         if age < 0 or age > self.max_quote_age_seconds:
             raise LiveOrderEvidenceUnavailable("quote timestamp is stale or in the future")
         if lot <= 0 or instrument["actual_quantity_verified"] is not True:
