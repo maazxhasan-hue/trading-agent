@@ -2,19 +2,22 @@
 from __future__ import annotations
 import time
 
+from guarded_live_gate import GuardedLiveOrderGate, LiveOrderBlocked
+
 
 class OrderLifecycleError(RuntimeError):
     pass
 
 
 class AngelOneOrderManager:
-    def __init__(self, execution, journal=None, poll_seconds=2, timeout_seconds=20):
+    def __init__(self, execution, journal=None, poll_seconds=2, timeout_seconds=20, live_gate=None):
         self.execution = execution
         self.journal = journal
         self.poll_seconds = max(1, int(poll_seconds))
         self.timeout_seconds = max(1, int(timeout_seconds))
+        self.live_gate = live_gate or GuardedLiveOrderGate()
 
-    def submit(self, request, intent_id):
+    def submit(self, request, intent_id, safety_evidence=None):
         if not self.execution.enabled:
             raise OrderLifecycleError("live execution is disabled")
         existing = [
@@ -24,6 +27,21 @@ class AngelOneOrderManager:
         if existing:
             return self._result(existing[-1], allow_partial=True)
 
+        # Intentionally blocks legacy call sites that do not yet supply
+        # broker-derived margin/quote/exposure evidence. Never infer evidence.
+        try:
+            decision = self.live_gate.check(request, intent_id, safety_evidence)
+        except LiveOrderBlocked as exc:
+            if self.journal:
+                self.journal.record("ORDER_BLOCKED_BY_LIVE_GATE", intent_id=intent_id, reason=str(exc))
+            raise OrderLifecycleError(str(exc)) from exc
+
+        if self.journal:
+            self.journal.record("LIVE_ORDER_GATE_APPROVED", intent_id=intent_id,
+                                notional=decision["notional"], mode=decision["mode"])
+        # Reserve intent before the broker call to avoid concurrent duplicate
+        # submissions in this process. Broker tag reconciliation remains required.
+        self.live_gate.record_submitted(intent_id)
         order_id = self.execution.place_limit(request)
         if self.journal:
             self.journal.record("ORDER_SUBMITTED", order_id=order_id, intent_id=intent_id)
