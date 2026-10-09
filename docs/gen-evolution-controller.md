@@ -3,24 +3,15 @@
 This module adds a durable 3-hour tournament controller around the existing
 MCX `TournamentLedger`.
 
-## Current behavior
+- Starts a new session with its own population; previous runs cannot win the new session.
+- Maintains a fixed active population and records parent-generation lineage as retired agents are replaced.
+- Optionally initializes each replacement's isolated paper portfolio when a portfolio book is supplied.
+- Persists the original start/deadline and session membership across restarts.
+- At the deadline, evaluates only this session's generations using the ledger's existing one-hour target, minimum-trade, no-loss, drawdown and rule gates.
+- Emits `NO_QUALIFIED_CHAMPION` when no candidate passes. It never fabricates a winner, starts Angel One validation, or enables live orders.
 
-- Maintains a configured number of active GEN tournament records.
-- Replenishes retired generations while the tournament is running and records
-  parent-generation lineage.
-- Persists the original start/deadline across process restarts.
-- At the deadline, asks `TournamentLedger.select_champion()` to apply the
-  existing one-hour target, minimum-trade, no-loss, drawdown and rule checks.
-- Emits `NO_QUALIFIED_CHAMPION` when no candidate passes. It never fabricates a
-  winner, starts Angel One validation, or enables live orders.
+## Integration boundary
 
-## Important integration boundary
+This controller is not yet wired into `nse_agent.py`, HQ telemetry, or a VM service. A runtime loop must call `tick()` and pass independently produced signals to the paper bridge. It must also supply the same persistent ledger and portfolio book used by the tournament.
 
-This is a controller module, not yet wired into the main runtime/HQ in this
-change. The service loop must call `tick()` on a schedule and pass independently
-produced signals to the existing paper bridge. Do not treat a selected champion
-as evidence that ₹1,000/hour is achievable from ₹100. With the 6% notional cap,
-the existing paper book correctly skips futures contracts whose real lot cannot
-fit within the cap.
-
-Live trading remains disabled; Angel One validation remains deferred.
+The ₹1,000/hour target from ₹100 is not guaranteed. With a 6% notional cap, real MCX futures lots that cannot fit the cap must be skipped. Angel One validation remains deferred and live trading remains OFF.
