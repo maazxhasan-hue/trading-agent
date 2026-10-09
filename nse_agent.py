@@ -523,7 +523,7 @@ class NSETradingCompany:
                 state = controller.tick()
                 self.journal.record("MCX_GEN_EVOLUTION", **state)
                 hq_events.emit("gen_tournament", **state)
-                if state.get("status") == "CHAMPION_SELECTED":
+                if state.get("status") == "CHAMPION_RUNNING":
                     hq_events.activity(
                         "chief",
                         "GEN champion selected: GEN-%s (paper qualification only)" % state.get("champion_generation"),
