@@ -36,7 +36,7 @@ class GuardedLiveOrderGate:
             self.max_drawdown_fraction = _finite(os.getenv("LIVE_MAX_DRAWDOWN_FRACTION", "0.10"), "drawdown limit")
             self.max_quote_age_seconds = _finite(os.getenv("LIVE_MAX_QUOTE_AGE_SECONDS", "10"), "quote-age limit")
             self.max_orders_per_day = int(os.getenv("LIVE_MAX_ORDERS_PER_DAY", "10"))
-        except (TypeError, ValueError, OverflowError) as exc:
+        except (TypeError, ValueError, OverflowError, LiveOrderBlocked) as exc:
             raise ValueError("live risk limits contain invalid values") from exc
         limits = (self.max_position_fraction, self.max_total_exposure_fraction,
                   self.max_daily_loss_fraction, self.max_drawdown_fraction,
