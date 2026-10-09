@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from trading_city import TradingCity, build_market_universe
+from trading_city import TradingCity, build_market_universe, sync_tournament_from_evolution
 
 
 class TradingCityTests(unittest.TestCase):
@@ -77,6 +77,35 @@ class TradingCityTests(unittest.TestCase):
             city.update_tournament(stage="LIVE_CANDIDATE", status="QUALIFIED", champion_id="gen-1")
             self.assertEqual(city.snapshot()["tournament"]["champion_id"], "gen-1")
             self.assertFalse(city.snapshot()["risk"]["live_trading_enabled"])
+
+
+    def test_evolution_sync_reports_champion_without_promoting_or_enabling_live(self):
+        with tempfile.TemporaryDirectory() as temp:
+            city = TradingCity(Path(temp) / "city.json")
+            event = sync_tournament_from_evolution(city, {
+                "status": "CHAMPION_RUNNING",
+                "champion_generation": 7,
+                "result": {"status": "SELECTED"},
+                "deadline_at": "2030-01-01T00:00:00+00:00",
+                "session_generations": [5, 6, 7],
+            })
+            snapshot = city.snapshot()
+            self.assertEqual(event["champion_generation"], 7)
+            self.assertEqual(event["next_stage"], "PAPER_VALIDATION_PENDING")
+            self.assertEqual(snapshot["tournament"]["stage"], "GEN_TOURNAMENT")
+            self.assertEqual(snapshot["tournament"]["champion_id"], "GEN-7")
+            self.assertFalse(event["live_trading_enabled"])
+            self.assertFalse(snapshot["risk"]["live_trading_enabled"])
+            self.assertTrue(snapshot["risk"]["emergency_stop"])
+
+    def test_evolution_sync_missing_status_fails_closed_to_running(self):
+        with tempfile.TemporaryDirectory() as temp:
+            city = TradingCity(Path(temp) / "city.json")
+            event = sync_tournament_from_evolution(city, {})
+            self.assertEqual(event["status"], "RUNNING")
+            self.assertIsNone(event["champion_generation"])
+            self.assertIsNone(event["next_stage"])
+            self.assertFalse(event["live_trading_enabled"])
 
 
 if __name__ == "__main__":
