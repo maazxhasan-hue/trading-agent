@@ -299,6 +299,14 @@ class AngelOneExecution:
             raise AngelOneLocked("Angel One MCX backend refuses non-MCX orders.")
         if self.backend == "angelone_mcx" and request.product not in {"CARRYFORWARD", "NRML"}:
             raise AngelOneLocked("Angel One MCX futures require CARRYFORWARD/NRML product.")
+        if (
+            self.backend == "angelone_mcx"
+            and os.getenv("MCX_LIVE_EXIT_PROTECTION_VERIFIED", "false").strip().lower() != "true"
+        ):
+            raise AngelOneLocked(
+                "MCX live order blocked: protective exit handling has not been implemented "
+                "and independently verified. Keep paper mode enabled."
+            )
         self._ensure_session()
         payload = {
             "variety": "NORMAL",

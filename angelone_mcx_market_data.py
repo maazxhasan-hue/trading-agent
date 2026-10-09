@@ -38,6 +38,7 @@ class AngelOneMCXFeed:
         self._instruments = {}
         self._loaded_at = 0.0
         self._history_cache = {}
+        self._last_history_request = 0.0
 
     @property
     def is_free_data(self):
@@ -66,17 +67,21 @@ class AngelOneMCXFeed:
             x.strip().upper()
             for x in os.getenv(
                 "MCX_SYMBOL_FAMILIES",
-                "GOLD,GOLDM,SILVER,SILVERM,CRUDEOIL,CRUDEOILM,NATURALGAS,NATURALGASM,COPPER,ZINC",
+                "ALL",
             ).split(",")
             if x.strip()
         }
+        # ALL (or *) means every supported MCX futures family in Angel One's
+        # instrument master, not options or expired contracts. A narrow list
+        # remains available for targeted testing.
+        all_families = not allowed or "ALL" in allowed or "*" in allowed
         selected = {}
         for row in rows:
             symbol = str(row.get("tradingsymbol") or "").upper()
             kind = str(row.get("instrument_type") or "").upper()
             if not row.get("instrument_token") or kind not in {"FUTCOM", "FUTIDX", "FUT"}:
                 continue
-            if allowed and not any(symbol.startswith(name) for name in allowed):
+            if not all_families and not any(symbol.startswith(name) for name in allowed):
                 continue
             selected[symbol] = row
         self._instruments = selected
@@ -190,10 +195,17 @@ class AngelOneMCXFeed:
         interval = interval or os.getenv("MARKET_INTERVAL", "5m")
         key = (market.market_id, int(days), str(interval))
         cached = self._history_cache.get(key)
+        cache_ttl = max(0.0, float(os.getenv("ANGELONE_HISTORY_CACHE_TTL_SECONDS", "240")))
         if cached is not None:
-            return cached
+            cached_at, cached_rows = cached
+            if time.time() - cached_at < cache_ttl:
+                return cached_rows
         end = datetime.now(ZoneInfo("Asia/Kolkata"))
         start = end - timedelta(days=max(2, int(days)))
+        min_interval = max(0.0, float(os.getenv("ANGELONE_HISTORY_REQUEST_INTERVAL_SECONDS", "0.35")))
+        wait = min_interval - (time.time() - self._last_history_request)
+        if wait > 0:
+            time.sleep(wait)
         rows = self.broker.historical(
             market.instrument_token,
             start.strftime("%Y-%m-%d %H:%M"),
@@ -201,7 +213,8 @@ class AngelOneMCXFeed:
             self._interval(interval),
             exchange="MCX",
         )
-        self._history_cache[key] = rows
+        self._last_history_request = time.time()
+        self._history_cache[key] = (self._last_history_request, rows)
         return rows
 
     def current_price(self, market_id):
@@ -224,10 +237,6 @@ class AngelOneMCXFeed:
                 cache[market.market_id] = self.history(market, days, interval)
             except Exception as exc:
                 print("[angelone mcx history recovered]", market.tradingsymbol, repr(exc))
-        self._history_cache.update({
-            (m.market_id, int(days), str(interval or os.getenv("MARKET_INTERVAL", "5m"))): v
-            for m in markets[:limit]
-            for v in [cache.get(m.market_id)]
-            if v is not None
-        })
+        # history() owns cache timestamps and rate limiting; do not insert
+        # raw rows here or they would bypass the TTL on the next cycle.
         return cache

@@ -28,6 +28,7 @@ except ImportError:
 from nse_debate import NSEPreTradeDebate
 from nse_regime import classify as classify_regime
 from trade_journal import TradeJournal
+from mcx_tournament import TournamentLedger
 from zerodha_order_manager import ZerodhaOrderManager, OrderLifecycleError
 from angelone_order_manager import AngelOneOrderManager
 import hq_events
@@ -55,6 +56,8 @@ class Signal:
     confidence: float
     stop_pct: float
     reason: str
+    features: dict | None = None
+    agent_votes: dict | None = None
 
 
 class NSETradingCompany:
@@ -107,6 +110,17 @@ class NSETradingCompany:
         self.paper_agent_alive = True
         self.paper_agent_knowledge = []
         self._load_paper_state()
+        self.tournament = None
+        if self.backend in {"mcx", "angelone_mcx"}:
+            self.tournament = TournamentLedger(
+                path=os.getenv("MCX_TOURNAMENT_STATE_FILE", "data/mcx_tournament.json"),
+                target_pnl=float(os.getenv("PAPER_TOURNAMENT_TARGET_PNL", "1000")),
+                window_seconds=int(os.getenv("PAPER_TOURNAMENT_WINDOW_SECONDS", "3600")),
+                min_trades=int(os.getenv("PAPER_TOURNAMENT_MIN_TRADES", "3")),
+                max_drawdown_fraction=float(os.getenv("PAPER_TOURNAMENT_MAX_DRAWDOWN", "0.10")),
+            )
+            self.tournament.ensure_generation(self.paper_generation,
+                parent_generation=self.paper_generation - 1 if self.paper_generation > 1 else None)
 
     def _load_paper_state(self):
         try:
@@ -432,6 +446,8 @@ class NSETradingCompany:
         return Signal(
             market, debate.direction, debate.score, debate.confidence, stop,
             "debate-approved: " + debate.rationale,
+            features=dict(f),
+            agent_votes=dict(votes),
         )
 
     def _paper_fill_price(self, price, side):
@@ -473,6 +489,7 @@ class NSETradingCompany:
                 self.realized_pnl += pnl
                 self.daily_realized_pnl += pnl
                 closed.append((market_id, reason, pnl, exit_price))
+                self._record_tournament_trade(position, pnl, reason, prices)
                 self.journal.record(
                     "PAPER_EXIT",
                     symbol=market_id,
@@ -486,7 +503,9 @@ class NSETradingCompany:
                                quantity=position["qty"], price=round(exit_price, 4),
                                pnl=round(pnl, 2), reason=reason, paper=True)
                 del self.open_positions[market_id]
-                self._paper_agent_loss(market_id, pnl, reason)
+                self._paper_agent_loss(
+                    market_id, pnl, reason, position=position, exit_price=exit_price
+                )
         equity = self._paper_equity(prices)
         self.daily_pnl = self.daily_realized_pnl + (equity - self.cash - self.realized_pnl)
         self.peak = max(self.peak, equity)
@@ -509,6 +528,7 @@ class NSETradingCompany:
             self.realized_pnl += pnl
             self.daily_realized_pnl += pnl
             closed.append((market_id, reason, pnl, exit_price))
+            self._record_tournament_trade(position, pnl, reason, prices)
             self.journal.record(
                 "PAPER_EXIT",
                 symbol=market_id,
@@ -526,17 +546,77 @@ class NSETradingCompany:
                       "pnl=%.2f" % pnl, "price=%.2f" % price)
         return len(closed)
 
-    def _paper_agent_loss(self, market_id, pnl, reason):
-        """Paper-only death -> autopsy -> inherited replacement lifecycle."""
+    def _record_tournament_trade(self, position, pnl, reason, prices=None):
+        """Persist each closed MCX paper trade in its generation scorecard."""
+        if self.tournament is None or self.execution.enabled:
+            return None
+        generation = int(position.get("generation", self.paper_generation))
+        try:
+            risk = self._paper_risk_snapshot(prices or {})
+            card = self.tournament.record_trade(
+                generation, float(pnl),
+                timestamp=datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+                drawdown_fraction=float(risk.get("drawdown_fraction", 0.0)),
+            )
+            self.journal.record("MCX_TOURNAMENT_SCORECARD", **card, exit_reason=reason)
+            print("[MCX_TOURNAMENT]", json.dumps(card, sort_keys=True))
+            if card.get("status") == "RETIRED":
+                hq_events.activity("chief", f"GEN-{generation} retired by tournament: {card.get('retirement_reason')}", move=True)
+            elif card.get("promotion_eligible"):
+                hq_events.activity("chief", f"GEN-{generation} reached tournament objective; champion review eligible", move=True)
+            return card
+        except ValueError as exc:
+            self.journal.record("MCX_TOURNAMENT_RECORD_BLOCKED", generation=generation, error=str(exc))
+            print("[MCX_TOURNAMENT] record blocked", repr(exc))
+            return None
+
+    def _paper_agent_loss(self, market_id, pnl, reason, position=None, exit_price=None):
+        """Retire a losing paper generation and pass a structured trade autopsy forward."""
         if pnl >= 0 or self.execution.enabled:
             return
+        position = position or {}
+        entry_price = float(position.get("entry", 0.0) or 0.0)
+        exit_value = float(exit_price or 0.0)
+        side = str(position.get("side", "UNKNOWN")).upper()
+        signed = 1 if side == "BUY" else -1 if side == "SELL" else 0
+        directional_move_pct = (
+            100.0 * signed * (exit_value - entry_price) / entry_price
+            if entry_price > 0 and exit_value > 0 else None
+        )
+        raw_features = position.get("features") or {}
+        feature_snapshot = {
+            str(key): round(float(value), 6)
+            for key, value in raw_features.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+        raw_votes = position.get("agent_votes") or {}
+        agent_votes = {
+            str(key): round(float(value), 6)
+            for key, value in raw_votes.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
         previous = self.paper_generation
         autopsy = {
             "generation": previous,
             "market_id": market_id,
+            "tradingsymbol": position.get("tradingsymbol", market_id),
+            "side": side,
+            "entry_price": round(entry_price, 6) if entry_price > 0 else None,
+            "exit_price": round(exit_value, 6) if exit_value > 0 else None,
+            "quantity": position.get("qty"),
             "pnl": round(float(pnl), 2),
+            "directional_move_pct": round(directional_move_pct, 6) if directional_move_pct is not None else None,
             "exit_reason": reason,
-            "lesson": "review failed thesis, evidence and risk context before the next trade",
+            "entry_score": position.get("score"),
+            "entry_confidence": position.get("confidence"),
+            "stop_pct": position.get("stop_pct"),
+            "entry_features": feature_snapshot,
+            "agent_votes": agent_votes,
+            "lesson": (
+                "Loss is evidence, not proof of a universal rule. Preserve the failed "
+                "thesis and feature context; replacement strategies must validate on "
+                "unseen data before promotion."
+            ),
             "timestamp": datetime.now().isoformat(),
         }
         self.paper_agent_alive = False
@@ -549,6 +629,8 @@ class NSETradingCompany:
             action="REPLACE", adaptation="loss-autopsy + inherited-history + new-generation"
         )
         self.paper_generation = previous + 1
+        if getattr(self, "tournament", None) is not None:
+            self.tournament.ensure_generation(self.paper_generation, parent_generation=previous)
         self.paper_agent_alive = True
         hq_events.activity("chief", f"Paper GEN-{self.paper_generation} spawned with inherited knowledge", move=True)
         self.journal.record(
@@ -669,12 +751,18 @@ class NSETradingCompany:
                 self.open_positions[m.market_id] = {
                     "market_id": m.market_id,
                     "tradingsymbol": m.tradingsymbol,
+                    "generation": self.paper_generation,
                     "order_id": fill["order_id"],
                     "side": side,
                     "qty": filled,
                     "entry": avg_price,
                     "stop_pct": sig.stop_pct,
                     "entry_cycle": self.paper_cycle,
+                    "score": sig.score,
+                    "confidence": sig.confidence,
+                    "reason": sig.reason,
+                    "features": sig.features or {},
+                    "agent_votes": sig.agent_votes or {},
                 }
                 self.traded_today.add(m.market_id)
                 print("[ANGELONE_FILL]" if self.backend in {"angelone_nse", "angelone_mcx"} else "[ZERODHA_FILL]", fill)
@@ -690,11 +778,17 @@ class NSETradingCompany:
             entry = self._paper_fill_price(m.last_price, side)
             self.open_positions[m.market_id] = {
                 "market_id": m.market_id,
+                "generation": self.paper_generation,
                 "side": side,
                 "qty": qty,
                 "entry": entry,
                 "stop_pct": sig.stop_pct,
                 "entry_cycle": self.paper_cycle,
+                "score": sig.score,
+                "confidence": sig.confidence,
+                "reason": sig.reason,
+                "features": sig.features or {},
+                "agent_votes": sig.agent_votes or {},
             }
             self.traded_today.add(m.market_id)
             self.total_paper_trades += 1
@@ -851,15 +945,21 @@ class NSETradingCompany:
         if (1 - equity / max(self.peak, 1)) >= MAX_DRAWDOWN:
             print("[risk] kill switch: portfolio drawdown limit")
             return
-        research_limit = int(
-            os.getenv(
-                "MARKETS_PER_CYCLE",
+        if self.backend == "angelone_mcx":
+            # MCX live mode evaluates every instrument returned by the full
+            # configured quote scan; do not silently truncate to a small
+            # MARKETS_PER_CYCLE value.
+            research_limit = len(markets)
+        else:
+            research_limit = int(
                 os.getenv(
-                    "NSE_RESEARCH_MARKETS_PER_CYCLE",
-                    "25" if self.execution.enabled else "1000",
-                ),
+                    "MARKETS_PER_CYCLE",
+                    os.getenv(
+                        "NSE_RESEARCH_MARKETS_PER_CYCLE",
+                        "25" if self.execution.enabled else "1000",
+                    ),
+                )
             )
-        )
         for m in markets[:max(1, research_limit)]:
             try:
                 f = self.features(m)
@@ -939,11 +1039,16 @@ class NSETradingCompany:
 
     def run(self):
         while True:
+            cycle_started = time.monotonic()
             try:
                 self.cycle()
             except Exception as exc:
                 print("[nse supervisor] recovered", repr(exc))
-            time.sleep(SCAN_SECONDS)
+            # Keep scan starts approximately SCAN_SECONDS apart. Sleeping a
+            # full interval after a slow cycle would silently stretch cadence.
+            remaining = SCAN_SECONDS - (time.monotonic() - cycle_started)
+            if remaining > 0:
+                time.sleep(remaining)
 
 
 if __name__ == "__main__":
