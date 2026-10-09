@@ -147,20 +147,16 @@ class MCXGenEvolutionController:
         if not candidates:
             return None
         _, _, _, winner, card = max(candidates)
+        # Selection here means a paper champion only. Angel One validation is
+        # intentionally not scheduled by the evolution controller.
         record = self._records()[str(winner)]
-        record["status"] = "PROMOTION_PENDING"
+        record["status"] = "ACTIVE"
+        record["stage"] = "GEN_TOURNAMENT"
         self.ledger.state["champion_generation"] = winner
-        self.ledger.state.setdefault("promotions", []).append({
-            "generation": winner,
-            "from": "GEN_TOURNAMENT",
-            "to": "ANGELONE_PAPER_VALIDATION",
-            "status": "PENDING",
-            "created_at": now.isoformat(),
-        })
         save = getattr(self.ledger, "_save", None)
         if callable(save):
             save()
-        return {"generation": winner, "scorecard": card, "next_stage": "ANGELONE_PAPER_VALIDATION", "status": "PENDING"}
+        return {"generation": winner, "scorecard": card, "next_stage": "CONTINUOUS_PAPER", "status": "SELECTED"}
 
     def tick(self):
         """Advance lifecycle; Angel One validation and live orders remain disabled."""
