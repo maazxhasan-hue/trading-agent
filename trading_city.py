@@ -205,6 +205,6 @@ def sync_tournament_from_evolution(city: TradingCity, evolution: Mapping[str, An
         "result": evolution.get("result"),
         "deadline_at": evolution.get("deadline_at"),
         "session_generations": list(evolution.get("session_generations") or []),
-        "next_stage": "ANGELONE_PAPER_VALIDATION" if status == "CHAMPION_RUNNING" else None,
+        "next_stage": "PAPER_VALIDATION_PENDING" if status == "CHAMPION_RUNNING" else None,
         "live_trading_enabled": False,
     }
