@@ -68,7 +68,9 @@ class GenEvolutionTests(unittest.TestCase):
         self.assertEqual(state["status"], "CHAMPION_RUNNING")
         self.assertEqual(state["champion_generation"], 2)
         self.assertFalse(state["live_orders_enabled"])
-        self.assertEqual(self.ledger.state["generations"]["2"]["status"], "ACTIVE")\n        self.assertEqual(state["active_generations"], [2])\n        self.assertTrue(state["continuous_paper_champion"])
+        self.assertEqual(self.ledger.state["generations"]["2"]["status"], "ACTIVE")
+        self.assertEqual(state["active_generations"], [2])
+        self.assertTrue(state["continuous_paper_champion"])
 
     def test_old_generations_are_not_part_of_new_session(self):
         self.ledger.ensure_generation(99)
