@@ -22,6 +22,12 @@ Build an auditable, modular research and execution system for Angel One MCX futu
 4. A replacement is a candidate, not automatically a better strategy. It must beat validation gates on unseen data before promotion.
 5. A live loss must never trigger revenge trading, increased sizing, or an immediate untested strategy swap. Live generation retirement/promotion remains blocked until reliable live exit detection, persisted state, reconciliation, and paper/Angel One validation are implemented and verified.
 
+## Tournament scorecards and promotion gates
+
+`mcx_tournament.py` persists per-generation closed-trade scorecards, deducts explicitly supplied fees/slippage, computes rolling one-hour net P&L, win rate and drawdown, and retires a GEN generation after one net losing trade or risk-rule violation. A champion can be selected only after the configured target, sample-size and drawdown gates pass. The selected champion may enter Angel One paper validation only through the state-machine gate; validation requires Angel One MCX quotes, actual contract sizing, at least one full target window, enough trades, positive net P&L, bounded drawdown, no stale-quote events and no risk violations.
+
+A `LIVE_CANDIDATE` is a readiness record only: it explicitly does **not** enable live orders. The current engine records closed paper outcomes and scorecards, but an end-to-end scheduler that automatically runs parallel GEN candidates and orchestrates the full Angel One validation session is still a separate integration task. CI proxy data is not evidence of live MCX performance.
+
 ## Scan scope and cadence
 
 The configured scan ceiling is 1,000 returned instruments, and MCX mode evaluates every fetched instrument instead of truncating to 25. The actual universe is whatever Angel One returns for supported, non-expired MCX futures; 1,000 is a ceiling, not a guarantee that 1,000 contracts exist. The quote endpoint is rate-limited, so scan duration and history requests must be measured in the cloud before claiming a five-minute end-to-end cycle.
