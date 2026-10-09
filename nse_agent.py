@@ -851,15 +851,21 @@ class NSETradingCompany:
         if (1 - equity / max(self.peak, 1)) >= MAX_DRAWDOWN:
             print("[risk] kill switch: portfolio drawdown limit")
             return
-        research_limit = int(
-            os.getenv(
-                "MARKETS_PER_CYCLE",
+        if self.backend == "angelone_mcx":
+            # MCX live mode evaluates every instrument returned by the full
+            # configured quote scan; do not silently truncate to a small
+            # MARKETS_PER_CYCLE value.
+            research_limit = len(markets)
+        else:
+            research_limit = int(
                 os.getenv(
-                    "NSE_RESEARCH_MARKETS_PER_CYCLE",
-                    "1000" if self.execution.enabled else "1000",
-                ),
+                    "MARKETS_PER_CYCLE",
+                    os.getenv(
+                        "NSE_RESEARCH_MARKETS_PER_CYCLE",
+                        "25" if self.execution.enabled else "1000",
+                    ),
+                )
             )
-        )
         for m in markets[:max(1, research_limit)]:
             try:
                 f = self.features(m)
