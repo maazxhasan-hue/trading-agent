@@ -94,12 +94,28 @@ def test_provider_exception_fails_closed():
         collector.collect(Request())
 
 
-def test_unhealthy_reconciliation_is_returned_as_false_for_gate_to_block():
+def test_unhealthy_reconciliation_fails_closed():
     collector = AngelOneLiveEvidenceCollector(**providers(
         reconciliation_provider=lambda: False,
     ))
-    result = collector.collect(Request())
-    assert result["broker_reconciliation_healthy"] is False
+    with pytest.raises(LiveOrderEvidenceUnavailable, match="reconciliation is unhealthy"):
+        collector.collect(Request())
+
+
+def test_closed_market_fails_closed():
+    collector = AngelOneLiveEvidenceCollector(**providers(
+        market_open_provider=lambda request: False,
+    ))
+    with pytest.raises(LiveOrderEvidenceUnavailable, match="market session is closed"):
+        collector.collect(Request())
+
+
+def test_unverified_protective_exit_fails_closed():
+    collector = AngelOneLiveEvidenceCollector(**providers(
+        protective_exit_provider=lambda request: False,
+    ))
+    with pytest.raises(LiveOrderEvidenceUnavailable, match="protective-exit handling"):
+        collector.collect(Request())
 
 
 def test_future_quote_timestamp_fails_closed():
