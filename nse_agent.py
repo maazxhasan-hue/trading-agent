@@ -32,6 +32,7 @@ from mcx_tournament import TournamentLedger
 from mcx_paper_portfolios import MCXPaperPortfolioBook
 from mcx_paper_tournament import MCXPaperTournamentBridge
 from mcx_gen_evolution import MCXGenEvolutionController
+from trading_city import TradingCity
 from zerodha_order_manager import ZerodhaOrderManager, OrderLifecycleError
 from angelone_order_manager import AngelOneOrderManager
 import hq_events
@@ -67,6 +68,14 @@ class NSETradingCompany:
     def __init__(self):
         backend = os.getenv("TRADING_BACKEND", "zerodha_nse").lower()
         self.backend = backend
+        self.city = TradingCity(os.getenv("TRADING_CITY_STATE_FILE", "data/trading_city_state.json"))
+        for agent_id, role in (
+            ("research", "market_research"), ("momentum", "momentum"),
+            ("mean_reversion", "mean_reversion"), ("event_driven", "event_research"),
+            ("redteam", "adversarial_review"), ("risk", "risk_gate"),
+            ("chief", "orchestration"),
+        ):
+            self.city.register_agent(agent_id, role, "IDLE")
         if backend == "mcx":
             self.feed = MCXPublicFeed()
             self.execution = ZerodhaExecution()
@@ -953,6 +962,21 @@ class NSETradingCompany:
         )
         print("\n[%s] %s scanning..." % (datetime.now().isoformat(timespec="seconds"), "MCX" if self.backend in {"mcx","angelone_mcx"} else "NSE"))
         markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "1000")))
+        if self.backend in {"mcx", "angelone_mcx"}:
+            city_rows = []
+            for market in markets:
+                city_rows.append({
+                    "symbol": getattr(market, "tradingsymbol", ""),
+                    "exchange": getattr(market, "exchange", ""),
+                    "instrument_type": ("FUT" if getattr(self.feed, "is_live_authorized_data", False) else "PROXY"),
+                    "quote_timestamp": getattr(market, "quote_timestamp", None),
+                    "last_price": getattr(market, "last_price", None),
+                    "lot_size": getattr(market, "lot_size", None),
+                })
+            from trading_city import build_market_universe
+            city_universe = build_market_universe(city_rows, max_quote_age_seconds=MAX_LIVE_DATA_AGE)
+            self.city.update_universe(city_universe)
+            hq_events.emit("market_universe", **city_universe)
         self._hq_candle_ids = {m.market_id for m in markets[:int(os.getenv("HQ_CANDLE_PREVIEW_LIMIT", "5"))]}
         self._feature_candles.clear()
         print("[market] market universe scanned=", len(markets))
@@ -1115,6 +1139,37 @@ class NSETradingCompany:
             risk="MONITORING",
             chief="MONITORING",
         )
+        try:
+            # Mirror the actual evolution controller state instead of resetting
+            # the HQ tournament to RUNNING on every engine cycle.
+            controller = getattr(self, "gen_evolution", None)
+            if controller is not None:
+                evolution = dict(getattr(controller, "state", {}) or {})
+                evolution_status = str(evolution.get("status") or "RUNNING").upper()
+                champion_generation = evolution.get("champion_generation")
+                champion_id = (
+                    "GEN-%s" % champion_generation
+                    if champion_generation is not None else None
+                )
+                self.city.update_tournament(
+                    stage="GEN_TOURNAMENT",
+                    status=evolution_status,
+                    champion_id=champion_id,
+                )
+                hq_events.emit(
+                    "gen_tournament",
+                    status=evolution_status,
+                    champion_generation=champion_generation,
+                    result=evolution.get("result"),
+                    deadline_at=evolution.get("deadline_at"),
+                    session_generations=evolution.get("session_generations", []),
+                )
+            else:
+                self.city.update_tournament(stage="GEN_TOURNAMENT", status="RUNNING")
+            hq_events.emit("trading_city", **self.city.snapshot())
+        except Exception as city_error:
+            self.city.record_error(str(city_error))
+            hq_events.emit("trading_city_error", error=str(city_error)[:300])
         hq_events.heartbeat("Trading engine cycle complete")
         print(
             "[nse] provider=", self.feed.provider,
