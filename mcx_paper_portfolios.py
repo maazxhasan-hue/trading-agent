@@ -88,7 +88,8 @@ class MCXPaperPortfolioBook:
             return None
         side_sign = 1 if position["direction"] > 0 else -1
         exit_price = float(price) * (1 - side_sign * self.slippage_bps / 10000.0)
-        gross = (exit_price - float(position["entry_price"])) * int(position["quantity"]) * side_sign
+        fill_pnl = (exit_price - float(position["entry_price"])) * int(position["quantity"]) * side_sign
+        gross = (float(price) - float(position["reference_entry_price"])) * int(position["quantity"]) * side_sign
         entry_notional = self._notional(position)
         exit_notional = abs(exit_price * int(position["quantity"]))
         fees = (entry_notional + exit_notional) * self.fee_bps / 10000.0
@@ -97,8 +98,8 @@ class MCXPaperPortfolioBook:
             * int(position["quantity"])
             + abs(float(price) - exit_price) * int(position["quantity"])
         )
-        net = gross - fees
-        portfolio["cash"] += entry_notional + (gross - fees)
+        net = gross - fees - slippage
+        portfolio["cash"] += entry_notional + (fill_pnl - fees)
         portfolio["realized_pnl"] += net
         trade = {
             "generation": portfolio["generation"],
@@ -111,7 +112,7 @@ class MCXPaperPortfolioBook:
             "gross_pnl": round(gross, 8),
             "fees": round(fees, 8),
             "slippage": round(slippage, 8),
-            "net_pnl": round(net - slippage, 8),
+            "net_pnl": round(net, 8),
             "reason": str(reason),
             "closed_at": _now(),
         }
