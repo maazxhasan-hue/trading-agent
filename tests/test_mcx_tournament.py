@@ -14,7 +14,7 @@ class TournamentLedgerTests(unittest.TestCase):
             for pnl in (400, 350, 300):
                 ledger.record_trade(1, pnl, fees=10, slippage=5, timestamp=start.isoformat())
             card = ledger.scorecard(1, now=start)
-            self.assertEqual(card["net_pnl"], 1035)
+            self.assertEqual(card["net_pnl"], 1005)
             self.assertTrue(card["target_hit"])
             self.assertTrue(card["promotion_eligible"])
             winner = ledger.select_champion(now=start)
