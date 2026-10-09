@@ -28,6 +28,7 @@ except ImportError:
 from nse_debate import NSEPreTradeDebate
 from nse_regime import classify as classify_regime
 from trade_journal import TradeJournal
+from mcx_tournament import TournamentLedger
 from zerodha_order_manager import ZerodhaOrderManager, OrderLifecycleError
 from angelone_order_manager import AngelOneOrderManager
 import hq_events
@@ -109,6 +110,17 @@ class NSETradingCompany:
         self.paper_agent_alive = True
         self.paper_agent_knowledge = []
         self._load_paper_state()
+        self.tournament = None
+        if self.backend in {"mcx", "angelone_mcx"}:
+            self.tournament = TournamentLedger(
+                path=os.getenv("MCX_TOURNAMENT_STATE_FILE", "data/mcx_tournament.json"),
+                target_pnl=float(os.getenv("PAPER_TOURNAMENT_TARGET_PNL", "1000")),
+                window_seconds=int(os.getenv("PAPER_TOURNAMENT_WINDOW_SECONDS", "3600")),
+                min_trades=int(os.getenv("PAPER_TOURNAMENT_MIN_TRADES", "3")),
+                max_drawdown_fraction=float(os.getenv("PAPER_TOURNAMENT_MAX_DRAWDOWN", "0.10")),
+            )
+            self.tournament.ensure_generation(self.paper_generation,
+                parent_generation=self.paper_generation - 1 if self.paper_generation > 1 else None)
 
     def _load_paper_state(self):
         try:
@@ -477,6 +489,7 @@ class NSETradingCompany:
                 self.realized_pnl += pnl
                 self.daily_realized_pnl += pnl
                 closed.append((market_id, reason, pnl, exit_price))
+                self._record_tournament_trade(position, pnl, reason, prices)
                 self.journal.record(
                     "PAPER_EXIT",
                     symbol=market_id,
@@ -515,6 +528,7 @@ class NSETradingCompany:
             self.realized_pnl += pnl
             self.daily_realized_pnl += pnl
             closed.append((market_id, reason, pnl, exit_price))
+            self._record_tournament_trade(position, pnl, reason, prices)
             self.journal.record(
                 "PAPER_EXIT",
                 symbol=market_id,
@@ -531,6 +545,30 @@ class NSETradingCompany:
                 print("[PAPER_SESSION_EXIT]", market_id, why,
                       "pnl=%.2f" % pnl, "price=%.2f" % price)
         return len(closed)
+
+    def _record_tournament_trade(self, position, pnl, reason, prices=None):
+        """Persist each closed MCX paper trade in its generation scorecard."""
+        if self.tournament is None or self.execution.enabled:
+            return None
+        generation = int(position.get("generation", self.paper_generation))
+        try:
+            risk = self._paper_risk_snapshot(prices or {})
+            card = self.tournament.record_trade(
+                generation, float(pnl),
+                timestamp=datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+                drawdown_fraction=float(risk.get("drawdown_fraction", 0.0)),
+            )
+            self.journal.record("MCX_TOURNAMENT_SCORECARD", **card, exit_reason=reason)
+            print("[MCX_TOURNAMENT]", json.dumps(card, sort_keys=True))
+            if card.get("status") == "RETIRED":
+                hq_events.activity("chief", f"GEN-{generation} retired by tournament: {card.get('retirement_reason')}", move=True)
+            elif card.get("promotion_eligible"):
+                hq_events.activity("chief", f"GEN-{generation} reached tournament objective; champion review eligible", move=True)
+            return card
+        except ValueError as exc:
+            self.journal.record("MCX_TOURNAMENT_RECORD_BLOCKED", generation=generation, error=str(exc))
+            print("[MCX_TOURNAMENT] record blocked", repr(exc))
+            return None
 
     def _paper_agent_loss(self, market_id, pnl, reason, position=None, exit_price=None):
         """Retire a losing paper generation and pass a structured trade autopsy forward."""
@@ -591,6 +629,8 @@ class NSETradingCompany:
             action="REPLACE", adaptation="loss-autopsy + inherited-history + new-generation"
         )
         self.paper_generation = previous + 1
+        if self.tournament is not None:
+            self.tournament.ensure_generation(self.paper_generation, parent_generation=previous)
         self.paper_agent_alive = True
         hq_events.activity("chief", f"Paper GEN-{self.paper_generation} spawned with inherited knowledge", move=True)
         self.journal.record(
@@ -711,6 +751,7 @@ class NSETradingCompany:
                 self.open_positions[m.market_id] = {
                     "market_id": m.market_id,
                     "tradingsymbol": m.tradingsymbol,
+                    "generation": self.paper_generation,
                     "order_id": fill["order_id"],
                     "side": side,
                     "qty": filled,
@@ -737,6 +778,7 @@ class NSETradingCompany:
             entry = self._paper_fill_price(m.last_price, side)
             self.open_positions[m.market_id] = {
                 "market_id": m.market_id,
+                "generation": self.paper_generation,
                 "side": side,
                 "qty": qty,
                 "entry": entry,
