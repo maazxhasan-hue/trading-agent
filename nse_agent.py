@@ -962,6 +962,21 @@ class NSETradingCompany:
         )
         print("\n[%s] %s scanning..." % (datetime.now().isoformat(timespec="seconds"), "MCX" if self.backend in {"mcx","angelone_mcx"} else "NSE"))
         markets = self.feed.fetch(int(os.getenv("MAX_MARKETS_PER_SCAN", "1000")))
+        if self.backend in {"mcx", "angelone_mcx"}:
+            city_rows = []
+            for market in markets:
+                city_rows.append({
+                    "symbol": getattr(market, "tradingsymbol", ""),
+                    "exchange": getattr(market, "exchange", ""),
+                    "instrument_type": ("FUT" if getattr(self.feed, "is_live_authorized_data", False) else "PROXY"),
+                    "quote_timestamp": getattr(market, "quote_timestamp", None),
+                    "last_price": getattr(market, "last_price", None),
+                    "lot_size": getattr(market, "lot_size", None),
+                })
+            from trading_city import build_market_universe
+            city_universe = build_market_universe(city_rows, max_quote_age_seconds=MAX_LIVE_DATA_AGE)
+            self.city.update_universe(city_universe)
+            hq_events.emit("market_universe", **city_universe)
         self._hq_candle_ids = {m.market_id for m in markets[:int(os.getenv("HQ_CANDLE_PREVIEW_LIMIT", "5"))]}
         self._feature_candles.clear()
         print("[market] market universe scanned=", len(markets))
