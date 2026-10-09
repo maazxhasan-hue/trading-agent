@@ -629,7 +629,7 @@ class NSETradingCompany:
             action="REPLACE", adaptation="loss-autopsy + inherited-history + new-generation"
         )
         self.paper_generation = previous + 1
-        if self.tournament is not None:
+        if getattr(self, "tournament", None) is not None:
             self.tournament.ensure_generation(self.paper_generation, parent_generation=previous)
         self.paper_agent_alive = True
         hq_events.activity("chief", f"Paper GEN-{self.paper_generation} spawned with inherited knowledge", move=True)
