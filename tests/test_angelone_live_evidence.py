@@ -10,12 +10,14 @@ class Request:
     tradingsymbol = "GOLDM26OCTFUT"
     quantity = 1
     price = 5
+    symboltoken = "123"
+    exchange = "MCX"
 
 
 def providers(**overrides):
     values = {
         "quote_provider": lambda request: {
-            "last_price": 5.0, "timestamp": 1000.0, "authorized": True,
+            "last_price": 5.0, "timestamp": 1000.0, "authorized": True, "symboltoken": "123", "exchange": "MCX",
         },
         "instrument_provider": lambda request: {
             "lot_size": 1, "actual_quantity_verified": True,
@@ -58,9 +60,9 @@ def test_collects_complete_evidence_without_enabling_orders():
 @pytest.mark.parametrize(
     "quote,match",
     [
-        ({"last_price": 5.0, "timestamp": 900.0, "authorized": True}, "stale"),
-        ({"last_price": 5.0, "timestamp": 1000.0, "authorized": False}, "authorized"),
-        ({"last_price": 5.0, "authorized": True}, "missing fields"),
+        ({"last_price": 5.0, "timestamp": 900.0, "authorized": True, "symboltoken": "123", "exchange": "MCX"}, "stale"),
+        ({"last_price": 5.0, "timestamp": 1000.0, "authorized": False, "symboltoken": "123", "exchange": "MCX"}, "authorized"),
+        ({"last_price": 5.0, "authorized": True, "symboltoken": "123", "exchange": "MCX"}, "missing fields"),
     ],
 )
 def test_bad_quote_fails_closed(quote, match):
@@ -103,8 +105,31 @@ def test_unhealthy_reconciliation_is_returned_as_false_for_gate_to_block():
 def test_future_quote_timestamp_fails_closed():
     collector = AngelOneLiveEvidenceCollector(**providers(
         quote_provider=lambda request: {
-            "last_price": 5.0, "timestamp": 1002.0, "authorized": True,
+            "last_price": 5.0, "timestamp": 1002.0, "authorized": True, "symboltoken": "123", "exchange": "MCX",
         },
     ))
     with pytest.raises(LiveOrderEvidenceUnavailable, match="future"):
+        collector.collect(Request())
+
+
+def test_quote_identity_must_match_request():
+    collector = AngelOneLiveEvidenceCollector(**providers(
+        quote_provider=lambda request: {
+            "last_price": 5.0, "timestamp": 1000.0, "authorized": True,
+            "symboltoken": "999", "exchange": "MCX",
+        },
+    ))
+    with pytest.raises(LiveOrderEvidenceUnavailable, match="token does not match"):
+        collector.collect(Request())
+
+
+@pytest.mark.parametrize("price", [0, -1, float("nan"), float("inf")])
+def test_non_positive_or_non_finite_quote_price_fails_closed(price):
+    collector = AngelOneLiveEvidenceCollector(**providers(
+        quote_provider=lambda request: {
+            "last_price": price, "timestamp": 1000.0, "authorized": True,
+            "symboltoken": "123", "exchange": "MCX",
+        },
+    ))
+    with pytest.raises(LiveOrderEvidenceUnavailable):
         collector.collect(Request())
