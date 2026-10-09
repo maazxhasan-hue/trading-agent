@@ -88,3 +88,34 @@ def test_duplicate_intent_blocks(monkeypatch, tmp_path):
     gate.record_submitted("i-1")
     with pytest.raises(LiveOrderBlocked, match="duplicate"):
         gate.check(request(), "i-1", evidence())
+
+
+@pytest.mark.parametrize("override", [
+    {"equity": float("nan")},
+    {"current_exposure": float("inf")},
+    {"daily_pnl": float("-inf")},
+    {"required_margin": float("nan")},
+    {"available_margin": float("inf")},
+    {"peak_equity": float("nan")},
+    {"current_equity": float("inf")},
+    {"orders_today": float("nan")},
+    {"quote_age_seconds": float("nan")},
+])
+def test_non_finite_safety_values_always_block(monkeypatch, tmp_path, override):
+    arm(monkeypatch)
+    gate = GuardedLiveOrderGate(str(tmp_path / "KILL"))
+    with pytest.raises(LiveOrderBlocked, match="finite"):
+        gate.check(request(), "nonfinite", evidence(**override))
+
+
+def test_non_finite_risk_limit_rejected_at_startup(monkeypatch, tmp_path):
+    monkeypatch.setenv("LIVE_MAX_POSITION_FRACTION", "nan")
+    with pytest.raises(ValueError, match="invalid values"):
+        GuardedLiveOrderGate(str(tmp_path / "KILL"))
+
+
+def test_fractional_order_count_blocks(monkeypatch, tmp_path):
+    arm(monkeypatch)
+    gate = GuardedLiveOrderGate(str(tmp_path / "KILL"))
+    with pytest.raises(LiveOrderBlocked, match="must be integers"):
+        gate.check(request(), "fractional-orders", evidence(orders_today=0.5))
