@@ -6,6 +6,7 @@ stop is a local file (default data/LIVE_KILL_SWITCH) or an explicit env flag.
 """
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
 
@@ -23,12 +24,20 @@ class GuardedLiveOrderGate:
         self.kill_switch_path = Path(
             kill_switch_path or os.getenv("LIVE_KILL_SWITCH_FILE", "data/LIVE_KILL_SWITCH")
         )
-        self.max_position_fraction = float(os.getenv("LIVE_MAX_POSITION_FRACTION", "0.06"))
-        self.max_total_exposure_fraction = float(os.getenv("LIVE_MAX_TOTAL_EXPOSURE_FRACTION", "0.30"))
-        self.max_daily_loss_fraction = float(os.getenv("LIVE_MAX_DAILY_LOSS_FRACTION", "0.03"))
-        self.max_drawdown_fraction = float(os.getenv("LIVE_MAX_DRAWDOWN_FRACTION", "0.10"))
-        self.max_quote_age_seconds = float(os.getenv("LIVE_MAX_QUOTE_AGE_SECONDS", "10"))
-        self.max_orders_per_day = int(os.getenv("LIVE_MAX_ORDERS_PER_DAY", "10"))
+        try:
+            self.max_position_fraction = float(os.getenv("LIVE_MAX_POSITION_FRACTION", "0.06"))
+            self.max_total_exposure_fraction = float(os.getenv("LIVE_MAX_TOTAL_EXPOSURE_FRACTION", "0.30"))
+            self.max_daily_loss_fraction = float(os.getenv("LIVE_MAX_DAILY_LOSS_FRACTION", "0.03"))
+            self.max_drawdown_fraction = float(os.getenv("LIVE_MAX_DRAWDOWN_FRACTION", "0.10"))
+            self.max_quote_age_seconds = float(os.getenv("LIVE_MAX_QUOTE_AGE_SECONDS", "10"))
+            self.max_orders_per_day = int(os.getenv("LIVE_MAX_ORDERS_PER_DAY", "10"))
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("live risk limits contain invalid values") from exc
+        limits = (self.max_position_fraction, self.max_total_exposure_fraction,
+                  self.max_daily_loss_fraction, self.max_drawdown_fraction,
+                  self.max_quote_age_seconds)
+        if not all(math.isfinite(value) and value > 0 for value in limits) or self.max_orders_per_day <= 0:
+            raise ValueError("live risk limits must be finite and positive")
         self._approved_intents: set[str] = set()
 
     def check(self, request, intent_id: str, evidence: dict | None) -> dict:
@@ -59,25 +68,42 @@ class GuardedLiveOrderGate:
             raise LiveOrderBlocked("missing safety evidence: " + ", ".join(missing))
         if evidence["authorized_quote"] is not True:
             raise LiveOrderBlocked("quote is not from the authorized broker feed")
-        age = float(evidence["quote_age_seconds"])
+        try:
+            age = float(evidence["quote_age_seconds"])
+            lot_value = float(evidence["contract_lot_size"])
+            qty_value = float(getattr(request, "quantity", 0))
+            required_margin = float(evidence["required_margin"])
+            available_margin = float(evidence["available_margin"])
+            equity = float(evidence["equity"])
+            price = float(getattr(request, "price", 0))
+                    peak_equity = float(evidence["peak_equity"])
+            current_equity = float(evidence["current_equity"])
+            orders_value = float(evidence["orders_today"])
+            numbers = (age, lot_value, qty_value, required_margin, available_margin,
+                       equity, price, exposure, daily_pnl, peak_equity, current_equity, orders_value)
+            if not all(math.isfinite(value) for value in numbers):
+                raise LiveOrderBlocked("safety evidence contains non-finite numeric values")
+            if not lot_value.is_integer() or not qty_value.is_integer() or not orders_value.is_integer():
+                raise LiveOrderBlocked("lot size, quantity, and order count must be integers")
+            lot, qty = int(lot_value), int(qty_value)
+            orders_today = int(orders_value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            if isinstance(exc, LiveOrderBlocked):
+                raise
+            raise LiveOrderBlocked("safety evidence contains invalid numeric values") from exc
         if age < 0 or age > self.max_quote_age_seconds:
             raise LiveOrderBlocked("quote is stale or timestamp is invalid")
-        lot = int(evidence["contract_lot_size"])
-        qty = int(getattr(request, "quantity", 0))
         if lot <= 0 or qty <= 0 or qty % lot != 0:
             raise LiveOrderBlocked("quantity must be a positive multiple of the actual contract lot size")
         if evidence["actual_contract_quantity"] is not True:
             raise LiveOrderBlocked("actual contract quantity is not verified")
         if evidence["margin_verified"] is not True:
             raise LiveOrderBlocked("broker margin is not verified")
-        required_margin = float(evidence["required_margin"])
-        available_margin = float(evidence["available_margin"])
         if required_margin <= 0 or available_margin < required_margin:
             raise LiveOrderBlocked("insufficient verified available margin")
-        equity = float(evidence["equity"])
         if equity <= 0:
             raise LiveOrderBlocked("equity must be positive")
-        notional = float(getattr(request, "price", 0)) * qty
+        notional = price * qty
         if notional <= 0 or notional > equity * self.max_position_fraction:
             raise LiveOrderBlocked("order notional exceeds per-position cap")
         exposure = float(evidence["current_exposure"])
@@ -86,14 +112,12 @@ class GuardedLiveOrderGate:
         daily_pnl = float(evidence["daily_pnl"])
         if daily_pnl <= -(equity * self.max_daily_loss_fraction):
             raise LiveOrderBlocked("daily loss limit reached")
-        peak_equity = float(evidence["peak_equity"])
-        current_equity = float(evidence["current_equity"])
         if peak_equity <= 0 or current_equity <= 0:
             raise LiveOrderBlocked("equity history is invalid")
         drawdown = max(0.0, (peak_equity - current_equity) / peak_equity)
         if drawdown >= self.max_drawdown_fraction:
             raise LiveOrderBlocked("portfolio drawdown limit reached")
-        if int(evidence["orders_today"]) >= self.max_orders_per_day:
+        if orders_today >= self.max_orders_per_day:
             raise LiveOrderBlocked("daily order-count limit reached")
         for key in ("market_open", "risk_checks_passed", "protective_exit_verified", "broker_reconciliation_healthy"):
             if evidence[key] is not True:
