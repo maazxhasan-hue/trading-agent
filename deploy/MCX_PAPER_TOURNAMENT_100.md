@@ -4,9 +4,11 @@ This service is deliberately separate from `mcx-paper-planb.service`. It uses se
 
 ## Important limits
 
-- The market feed is Yahoo global-futures proxy data, **not actual MCX exchange prices or tradable MCX contracts**.
+- The default CI feed is Yahoo global-futures proxy data, **not actual MCX exchange prices or tradable MCX contracts**. Use it for software checks only; the Angel One validation stage must use fresh Angel One MCX quotes.
 - Fractional units are simulation-only and must never be used for broker orders.
-- The ₹1,000 target is an experiment metric, not a promised or expected return.
+- The tournament objective is to test whether a candidate can reach ₹1,000 net simulated P&L within a 3,600-second window. It is an experiment metric, not a promised or expected return. The continuous CI workflow runs one scan per invocation; it does not by itself prove a one-hour result. The one-hour Azure service is a separate run and must retain its own persisted state and timestamps.
+- Promotion is not based on hitting the ₹1,000 target alone. Candidates must also pass out-of-sample validation, net-of-cost drawdown and stability gates, plus independent Angel One paper validation using actual MCX quotes and real contract lot sizes. A failed or unverified gate means no promotion.
+- The CI workflow uses Yahoo global-futures proxy data and a ₹100,000 paper book; it cannot certify actual MCX performance or be treated as the final candidate tournament.
 - The 6% setting caps paper position notional at 6% of current paper capital; this is stricter than risking 6% of capital at the stop. It does not guarantee a 6% stop-loss outcome.
 - The evolutionary lifecycle stores a generic loss lesson and inherited history; it does not automatically make the successor stronger.
 - The existing Plan B service and its state file must not be edited or reset.
