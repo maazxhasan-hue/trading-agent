@@ -997,11 +997,16 @@ class NSETradingCompany:
 
     def run(self):
         while True:
+            cycle_started = time.monotonic()
             try:
                 self.cycle()
             except Exception as exc:
                 print("[nse supervisor] recovered", repr(exc))
-            time.sleep(SCAN_SECONDS)
+            # Keep scan starts approximately SCAN_SECONDS apart. Sleeping a
+            # full interval after a slow cycle would silently stretch cadence.
+            remaining = SCAN_SECONDS - (time.monotonic() - cycle_started)
+            if remaining > 0:
+                time.sleep(remaining)
 
 
 if __name__ == "__main__":
