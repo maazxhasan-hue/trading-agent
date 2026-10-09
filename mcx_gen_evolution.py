@@ -68,6 +68,7 @@ class MCXGenEvolutionController:
             "champion_generation": None,
             "result": None,
             "replacement_history": [],
+            "champion_history": [],
         }
 
     def _save(self):
@@ -113,7 +114,7 @@ class MCXGenEvolutionController:
 
     def replenish(self):
         """Replace retired agents while running; only this run's population counts."""
-        if self.state.get("status") != "RUNNING":
+        if self.state.get("status") not in {"RUNNING", "CHAMPION_RUNNING"}:
             return self.active_generations()
         active = self.active_generations()
         session_ids = {int(value) for value in self.state["session_generations"]}
@@ -164,15 +165,54 @@ class MCXGenEvolutionController:
     def tick(self):
         """Advance lifecycle; Angel One validation and live orders remain disabled."""
         now = self.clock()
+        if self.state.get("status") == "CHAMPION_RUNNING":
+            champion_id = self.state.get("champion_generation")
+            champion_record = self._records().get(str(champion_id)) if champion_id is not None else None
+            if not champion_record or champion_record.get("status") != "ACTIVE":
+                # Champion failed the user's loss-elimination rule. Start a new
+                # bounded paper evolution session; never jump directly to live.
+                self.state["champion_history"].append({
+                    "generation": champion_id,
+                    "ended_at": now.isoformat(),
+                    "reason": "champion_retired_or_inactive",
+                })
+                self.state.update({
+                    "started_at": now.isoformat(),
+                    "deadline_at": (now + timedelta(seconds=self.tournament_seconds)).isoformat(),
+                    "session_generations": [],
+                    "status": "RUNNING",
+                    "champion_generation": None,
+                    "result": None,
+                })
+                self._save()
         if self.state.get("status") == "RUNNING":
             self.replenish()
             deadline = _utc(self.state["deadline_at"])
             if now >= deadline:
                 champion = self._select_session_champion(now)
                 if champion:
-                    self.state["status"] = "CHAMPION_SELECTED"
-                    self.state["champion_generation"] = int(champion["generation"])
+                    winner = int(champion["generation"])
+                    # Keep only the winner active in the paper bridge after the
+                    # selection deadline; validation/live execution stay separate.
+                    for generation in self.state["session_generations"]:
+                        record = self._records().get(str(int(generation)))
+                        if not record or int(generation) == winner:
+                            continue
+                        if record.get("status") == "ACTIVE":
+                            record["status"] = "RETIRED"
+                            record["stage"] = "RETIRED"
+                            record["retirement_reason"] = "not_selected_as_champion"
+                    winning_record = self._records()[str(winner)]
+                    winning_record["status"] = "ACTIVE"
+                    winning_record["stage"] = "GEN_TOURNAMENT"
+                    self.state["status"] = "CHAMPION_RUNNING"
+                    self.state["champion_generation"] = winner
                     self.state["result"] = champion
+                    self.state["champion_history"].append({
+                        "generation": winner,
+                        "selected_at": now.isoformat(),
+                        "status": "paper_champion_running",
+                    })
                 else:
                     self.state["status"] = "NO_QUALIFIED_CHAMPION"
                     self.state["result"] = {
@@ -194,4 +234,5 @@ class MCXGenEvolutionController:
             "result": self.state.get("result"),
             "live_orders_enabled": False,
             "angelone_validation_started": False,
+            "continuous_paper_champion": self.state.get("status") == "CHAMPION_RUNNING",
         }
