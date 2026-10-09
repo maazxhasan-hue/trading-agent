@@ -79,9 +79,10 @@ class AgentLifecycleManager:
             total = a.wins + a.losses
             a.fitness = a.wins / total if total else 0.50
             if not won:
-                # One loss records a violation; quarantine only after the
-                # configured repeated-failure threshold.
-                threshold = max(1, int(os.getenv("QUARANTINE_AFTER_RULE_VIOLATIONS", "2")))
+                # Default to one-loss retirement. Operators may raise the
+                # threshold only for non-production experiments; promotion of
+                # a replacement still requires independent validation.
+                threshold = max(1, int(os.getenv("QUARANTINE_AFTER_RULE_VIOLATIONS", "1")))
                 if a.rule_violations >= threshold:
                     a.status = "QUARANTINED"
             self._save()
