@@ -55,6 +55,8 @@ class Signal:
     confidence: float
     stop_pct: float
     reason: str
+    features: dict | None = None
+    agent_votes: dict | None = None
 
 
 class NSETradingCompany:
@@ -432,6 +434,8 @@ class NSETradingCompany:
         return Signal(
             market, debate.direction, debate.score, debate.confidence, stop,
             "debate-approved: " + debate.rationale,
+            features=dict(f),
+            agent_votes=dict(votes),
         )
 
     def _paper_fill_price(self, price, side):
@@ -486,7 +490,9 @@ class NSETradingCompany:
                                quantity=position["qty"], price=round(exit_price, 4),
                                pnl=round(pnl, 2), reason=reason, paper=True)
                 del self.open_positions[market_id]
-                self._paper_agent_loss(market_id, pnl, reason)
+                self._paper_agent_loss(
+                    market_id, pnl, reason, position=position, exit_price=exit_price
+                )
         equity = self._paper_equity(prices)
         self.daily_pnl = self.daily_realized_pnl + (equity - self.cash - self.realized_pnl)
         self.peak = max(self.peak, equity)
@@ -526,17 +532,53 @@ class NSETradingCompany:
                       "pnl=%.2f" % pnl, "price=%.2f" % price)
         return len(closed)
 
-    def _paper_agent_loss(self, market_id, pnl, reason):
-        """Paper-only death -> autopsy -> inherited replacement lifecycle."""
+    def _paper_agent_loss(self, market_id, pnl, reason, position=None, exit_price=None):
+        """Retire a losing paper generation and pass a structured trade autopsy forward."""
         if pnl >= 0 or self.execution.enabled:
             return
+        position = position or {}
+        entry_price = float(position.get("entry", 0.0) or 0.0)
+        exit_value = float(exit_price or 0.0)
+        side = str(position.get("side", "UNKNOWN")).upper()
+        signed = 1 if side == "BUY" else -1 if side == "SELL" else 0
+        directional_move_pct = (
+            100.0 * signed * (exit_value - entry_price) / entry_price
+            if entry_price > 0 and exit_value > 0 else None
+        )
+        raw_features = position.get("features") or {}
+        feature_snapshot = {
+            str(key): round(float(value), 6)
+            for key, value in raw_features.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+        raw_votes = position.get("agent_votes") or {}
+        agent_votes = {
+            str(key): round(float(value), 6)
+            for key, value in raw_votes.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
         previous = self.paper_generation
         autopsy = {
             "generation": previous,
             "market_id": market_id,
+            "tradingsymbol": position.get("tradingsymbol", market_id),
+            "side": side,
+            "entry_price": round(entry_price, 6) if entry_price > 0 else None,
+            "exit_price": round(exit_value, 6) if exit_value > 0 else None,
+            "quantity": position.get("qty"),
             "pnl": round(float(pnl), 2),
+            "directional_move_pct": round(directional_move_pct, 6) if directional_move_pct is not None else None,
             "exit_reason": reason,
-            "lesson": "review failed thesis, evidence and risk context before the next trade",
+            "entry_score": position.get("score"),
+            "entry_confidence": position.get("confidence"),
+            "stop_pct": position.get("stop_pct"),
+            "entry_features": feature_snapshot,
+            "agent_votes": agent_votes,
+            "lesson": (
+                "Loss is evidence, not proof of a universal rule. Preserve the failed "
+                "thesis and feature context; replacement strategies must validate on "
+                "unseen data before promotion."
+            ),
             "timestamp": datetime.now().isoformat(),
         }
         self.paper_agent_alive = False
@@ -675,6 +717,11 @@ class NSETradingCompany:
                     "entry": avg_price,
                     "stop_pct": sig.stop_pct,
                     "entry_cycle": self.paper_cycle,
+                    "score": sig.score,
+                    "confidence": sig.confidence,
+                    "reason": sig.reason,
+                    "features": sig.features or {},
+                    "agent_votes": sig.agent_votes or {},
                 }
                 self.traded_today.add(m.market_id)
                 print("[ANGELONE_FILL]" if self.backend in {"angelone_nse", "angelone_mcx"} else "[ZERODHA_FILL]", fill)
@@ -695,6 +742,11 @@ class NSETradingCompany:
                 "entry": entry,
                 "stop_pct": sig.stop_pct,
                 "entry_cycle": self.paper_cycle,
+                "score": sig.score,
+                "confidence": sig.confidence,
+                "reason": sig.reason,
+                "features": sig.features or {},
+                "agent_votes": sig.agent_votes or {},
             }
             self.traded_today.add(m.market_id)
             self.total_paper_trades += 1
