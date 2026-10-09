@@ -46,6 +46,18 @@ class MCXPaperPortfolioBookTests(unittest.TestCase):
         self.assertEqual(closed["closed_trades"][0]["reason"], "opposite_signal")
         self.assertGreater(closed["closed_trades"][0]["net_pnl"], 0)
 
+    def test_position_cap_compounds_from_current_equity(self):
+        portfolio = self.book.ensure_generation(7)
+        portfolio["cash"] = 106.0
+        self.book._save()
+        market = {**self.market, "last_price": 0.1, "lot_size": 1}
+        result = self.book.process_snapshot(7, market, 1)
+        self.assertTrue(result["opened"])
+        position = self.book.state["portfolios"]["7"]["positions"]["token-1"]
+        # 6% of ₹106 is ₹6.36, allowing 63 synthetic 10-paise units.
+        self.assertEqual(position["quantity"], 63)
+        self.assertLessEqual(position["entry_price"] * position["quantity"], 106.0 * 0.06)
+
     def test_persistence_reloads_each_generation(self):
         self.book.ensure_generation(4)
         reloaded = MCXPaperPortfolioBook(path=self.book.path, starting_cash=999)
