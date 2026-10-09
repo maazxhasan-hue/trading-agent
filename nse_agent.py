@@ -31,6 +31,7 @@ from trade_journal import TradeJournal
 from mcx_tournament import TournamentLedger
 from mcx_paper_portfolios import MCXPaperPortfolioBook
 from mcx_paper_tournament import MCXPaperTournamentBridge
+from mcx_gen_evolution import MCXGenEvolutionController
 from zerodha_order_manager import ZerodhaOrderManager, OrderLifecycleError
 from angelone_order_manager import AngelOneOrderManager
 import hq_events
@@ -113,6 +114,7 @@ class NSETradingCompany:
         self.paper_agent_knowledge = []
         self._load_paper_state()
         self.tournament = None
+        self.gen_evolution = None
         if self.backend in {"mcx", "angelone_mcx"}:
             self.tournament = TournamentLedger(
                 path=os.getenv("MCX_TOURNAMENT_STATE_FILE", "data/mcx_tournament.json"),
@@ -139,6 +141,14 @@ class NSETradingCompany:
                     self.mcx_portfolios,
                     population_size=int(os.getenv("MCX_GEN_POPULATION_SIZE", "5")),
                     max_quote_age_seconds=MAX_LIVE_DATA_AGE,
+                )
+                self.gen_evolution = MCXGenEvolutionController(
+                    self.tournament,
+                    state_path=os.getenv("MCX_GEN_EVOLUTION_STATE_FILE", "data/mcx_gen_evolution.json"),
+                    population_size=int(os.getenv("MCX_GEN_POPULATION_SIZE", "5")),
+                    tournament_seconds=int(os.getenv("MCX_GEN_TOURNAMENT_SECONDS", "10800")),
+                    target_hourly_net_pnl=float(os.getenv("PAPER_TOURNAMENT_TARGET_PNL", "1000")),
+                    portfolios=self.mcx_portfolios,
                 )
 
     def _load_paper_state(self):
@@ -297,8 +307,7 @@ class NSETradingCompany:
                 "SILVER" if "SILVER" in symbol else
                 "CRUDE" if "CRUDE" in symbol else
                 "NATURALGAS" if "NATURALGAS" in symbol else
-                "COPPER" if "COPPER" in symbol else
-                "ZINC" if "ZINC" in symbol else
+                "COPPER" if "COPPER" in symbol else                "ZINC" if "ZINC" in symbol else
                 "OTHER"
             )
             # Precious metals favor trend persistence; energy favors breakout
@@ -508,6 +517,19 @@ class NSETradingCompany:
             )
             self.journal.record("MCX_GEN_PAPER_CYCLE", **result)
             print("[MCX_GEN_PAPER_CYCLE]", json.dumps(result, sort_keys=True))
+            controller = getattr(self, "gen_evolution", None)
+            if controller is not None:
+                state = controller.tick()
+                self.journal.record("MCX_GEN_EVOLUTION", **state)
+                hq_events.emit("gen_tournament", **state)
+                if state.get("status") == "CHAMPION_SELECTED":
+                    hq_events.activity(
+                        "chief",
+                        "GEN champion selected: GEN-%s (paper qualification only)" % state.get("champion_generation"),
+                        move=True,
+                    )
+                elif state.get("status") == "NO_QUALIFIED_CHAMPION":
+                    hq_events.activity("risk", "GEN deadline reached without a qualified champion", move=True)
             return result
         except Exception as exc:
             self.journal.record("MCX_GEN_PAPER_CYCLE_BLOCKED", error=repr(exc))
@@ -597,8 +619,7 @@ class NSETradingCompany:
                 "PAPER_EXIT",
                 symbol=market_id,
                 reason=reason,
-                pnl=pnl,
-                exit_price=exit_price,
+                pnl=pnl,                exit_price=exit_price,
             )
             del self.open_positions[market_id]
         if closed:
@@ -897,8 +918,7 @@ class NSETradingCompany:
         return True
 
     def cycle(self):
-        if os.getenv("LIVE_KILL_SWITCH", "false").lower() == "true":
-            self.journal.record("KILL_SWITCH", reason="LIVE_KILL_SWITCH")
+        if os.getenv("LIVE_KILL_SWITCH", "false").lower() == "true":            self.journal.record("KILL_SWITCH", reason="LIVE_KILL_SWITCH")
             print("[risk] live kill switch active; no cycle executed")
             return
         if self.execution.enabled and not self._reconcile_live_state():
