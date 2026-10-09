@@ -183,3 +183,28 @@ class TradingCity:
                 os.unlink(temp_name)
             except FileNotFoundError:
                 pass
+
+
+def sync_tournament_from_evolution(city: TradingCity, evolution: Mapping[str, Any]) -> dict[str, Any]:
+    """Mirror a real GEN controller snapshot into City without advancing stages.
+
+    This is intentionally paper-only: controller status is informational and
+    can never promote a generation into Angel One validation or live trading.
+    """
+    status = str(evolution.get("status") or "RUNNING").strip().upper()
+    champion_generation = evolution.get("champion_generation")
+    champion_id = f"GEN-{champion_generation}" if champion_generation is not None else None
+    city.update_tournament(
+        stage="GEN_TOURNAMENT",
+        status=status,
+        champion_id=champion_id,
+    )
+    return {
+        "status": status,
+        "champion_generation": champion_generation,
+        "result": evolution.get("result"),
+        "deadline_at": evolution.get("deadline_at"),
+        "session_generations": list(evolution.get("session_generations") or []),
+        "next_stage": "ANGELONE_PAPER_VALIDATION" if status == "CHAMPION_RUNNING" else None,
+        "live_trading_enabled": False,
+    }
