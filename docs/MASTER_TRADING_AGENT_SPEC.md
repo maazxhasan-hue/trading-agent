@@ -154,3 +154,22 @@ As of the current PR work:
 - Tests must verify stale/missing/contradictory sources produce a skip, every trade recommendation has a complete evidence packet, and every skip has an auditable reason.
 - Tests must confirm browser agents cannot submit broker orders and that only the existing backend risk/execution gate can authorize an order.
 - The HQ may animate browser/network activity only from real telemetry. If a browser is stopped, disconnected, or has no fresh evidence, show that actual state rather than decorative activity.
+
+
+## 12. CEO-led adversarial debate and consensus gate
+
+### Debate before every trade candidate
+- For each candidate trade, convene a logged debate led by the CEO/orchestrator. Required independent roles: Research, Quant/Strategy, Adversarial/Skeptic, Risk Officer, Portfolio/Capital, and Execution/Market-Data. Roles may be implemented as isolated agents or independently evaluated modules, but each must produce its own evidence-linked assessment before seeing the final consensus.
+- The Research role presents sourced market context and evidence; Quant presents the reproducible signal, alternatives, and uncertainty; the Adversarial role must aggressively challenge the thesis and actively search for disconfirming evidence, counter-scenarios, and reasons the trade could fail; Risk checks hard limits and downside; Portfolio checks capital/position conflicts and affordability; Execution checks quote freshness, spread, liquidity, session, order constraints, and likely costs.
+- The CEO must push for a substantive, critical debate—not rubber-stamp the first suggestion. Each role must be able to disagree, cite evidence, ask for more data, or vote NO TRADE. Record each role's reasoning, evidence packet references, vote, confidence/calibration where available, and unresolved objections in an immutable/auditable decision record.
+- Use at least one debate/review round in which agents respond to the strongest opposing argument. If a material objection remains unresolved, evidence conflicts, required roles fail, or consensus is not reached within the configured time/data budget, the result is **NO TRADE** for that scan cycle. Never manufacture unanimity or force agents to agree.
+- A trade proposal may proceed only when every required role explicitly votes APPROVE after reviewing the same current evidence packet and responding to material objections, and the independent deterministic backend risk gate also passes. Abstain, timeout, missing role, stale evidence, or any NO vote blocks the entry. CEO approval alone can never override a dissenting required role or a hard risk veto.
+- Consensus applies to whether a candidate merits proceeding to the final risk/execution gate; it does not guarantee the trade will profit. Re-run the debate if material market data changes before execution, and reject the stale decision.
+- Review alternatives and compare net expected value after fees, taxes/levies, spread and slippage, plus downside, invalidation conditions, and uncertainty. A candidate with no defensible evidence-backed edge must be rejected, even if all agents are enthusiastic.
+- The consensus requirement does not relax the existing one-position rule, 6% maximum position-notional cap, affordability constraints, safe handling of open broker positions, one-loss GEN retirement policy, paper/validation promotion stages, or separate explicit operator authorization for live trading.
+
+### CEO debate and consensus validation
+- Unit/integration tests must cover unanimous approval, one dissenting vote, abstention, missing or timed-out agent, unresolved adversarial objection, conflicting/stale evidence, and a market-data change between consensus and order submission.
+- Verify the system emits NO TRADE for every failed-consensus case and that the CEO cannot override a hard risk rejection.
+- HQ must show each role's status and vote, evidence links, objection/rebuttal thread, debate round, final consensus result, backend risk-gate result, and the final trade/skip reason using real persisted events. Do not show invented debates or votes.
+- Every decision must remain auditable after a GEN is retired, a replacement is spawned, or the process restarts.
