@@ -773,7 +773,21 @@ class NSETradingCompany:
 
     def paper_or_live(self, sig):
         m = sig.market
-        capital = self.execution.funds_available(getattr(m, "exchange", "NSE")) if self.execution.enabled else self.cash
+        # Fail closed for live entries until the decision path reconciles broker
+        # positions and pending orders and validates per-instrument margin/lot
+        # constraints. The local open_positions map alone is not authoritative.
+        if self.execution.enabled:
+            self.journal.record(
+                "ORDER_BLOCKED",
+                symbol=m.tradingsymbol,
+                reason="live capital/exposure allocator is not yet wired to validated broker reconciliation and margin evidence",
+            )
+            print(
+                "[risk] live order blocked: broker-reconciled exposure and verified margin evidence "
+                "are not integrated into this entry path"
+            )
+            return
+        capital = self.cash
         if capital is None or capital <= 0:
             print("[risk] no available Zerodha equity margin; no order")
             return
