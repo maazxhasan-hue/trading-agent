@@ -18,6 +18,13 @@ class AgentObservabilityTests(unittest.TestCase):
         self.assertNotIn("crypto_specialist", ids)
         self.assertGreaterEqual(len(agents), 20)
 
+    def test_service_template_defaults_to_readonly_angelone_backend(self):
+        service = (obs.ROOT / "deploy" / "trading-agent.service.example").read_text(encoding="utf-8")
+        self.assertIn("Environment=TRADING_BACKEND=angelone_nse", service)
+        self.assertIn("Environment=LIVE_TRADING=false", service)
+        self.assertIn("Environment=ANGELONE_READONLY=true", service)
+        self.assertIn("Environment=MAX_POSITION_FRACTION=0.06", service)
+
     def test_runtime_config_does_not_point_to_obsolete_gamma_feed(self):
         runtime = obs.ROOT / "config" / "runtime.yaml"
         config = runtime.read_text(encoding="utf-8")
