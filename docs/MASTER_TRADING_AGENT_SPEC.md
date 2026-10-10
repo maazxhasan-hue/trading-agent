@@ -215,3 +215,65 @@ As of the current PR work:
 - Never enlarge a position beyond the current 6% notional cap, exchange quantity/lot rules, actual available funds/margin, liquidity constraints, or any stricter risk gate. Do not use leverage, concentration, or loosened stops just to make a trade “big.” No setup can guarantee a large profit; a larger notional exposure can also increase losses and charges.
 - Distinguish the configured one-loss GEN retirement rule from daily inactivity: a losing closed trade triggers the documented retirement/review procedure, but no-trade days do not. Retire or replace agents based on the explicitly configured policy and evidence, never to force daily activity.
 - Tests must verify capital growth increases only the rupee amount of the 6% cap, losses/charges decrease reconciled capital, the system selects and reports the daily best setup when one exists, and no-trade days neither force orders nor trigger agent retirement.
+
+
+## 16. Locked agent-role roster
+
+These are intended responsibilities. They may be implemented as independent agents or separately tested modules; the dashboard must show actual runtime status and must never imply a role is active when it is not.
+
+1. **CEO / Orchestrator:** coordinates the cycle and debate; cannot override a required NO vote or deterministic risk gate.
+2. **Bull Analyst:** builds the strongest evidence-supported case for a candidate.
+3. **Bear Analyst:** builds the strongest counter-case and downside scenario.
+4. **Red Team / Skeptic:** searches for disconfirming evidence, flawed assumptions, data leakage, manipulation, and failure modes.
+5. **Independent Risk Officer:** enforces capital, position notional, affordability, margin, exposure, session, and fail-closed checks.
+6. **Portfolio / Capital role:** checks existing exposure, reconciled capital, fees, available funds, and affordability.
+7. **Execution / Market-Data role:** verifies quote freshness, spread, liquidity, session, order constraints, and execution costs.
+8. **Quant / Fair-Value role:** computes reproducible signals, estimated fair value, probability/uncertainty, and expected net edge.
+9. **Research / News & Social role:** collects permitted news, exchange/company announcements, macro context, and authorized public X information with provenance; social sentiment alone is never a signal.
+10. **Market Scanner:** discovers supported instruments and reports actual scanned/eligible counts, skips, and data freshness.
+11. **Data Quality role:** detects stale, missing, contradictory, malformed, or unauditable inputs and fails closed.
+12. **Market Regime role:** classifies trend/range/volatility regimes using validated data.
+13. **Liquidity / Order-Book role:** analyses spread, available depth, liquidity, and order-book imbalance where supported data exists.
+14. **Momentum strategy specialist:** evaluates trend/momentum candidates.
+15. **Mean-Reversion strategy specialist:** evaluates reversion candidates with explicit invalidation conditions.
+16. **Breakout strategy specialist:** evaluates breakouts and confirmation/failure conditions.
+17. **Event-Driven specialist:** evaluates earnings, corporate actions, exchange announcements, and scheduled macro catalysts.
+18. **Cross-Market / Macro specialist:** evaluates relevant links among Indian indices, global markets, currencies, and commodities where valid data exists.
+19. **Volatility specialist:** evaluates volatility conditions and their implications for setup and risk.
+20. **MCX Commodity specialist:** evaluates eligible MCX instruments only after lot size, margin, charges, sessions, and permissions are verified.
+21. **Execution Quality / Post-Trade analyst:** audits fills, rejects, slippage, costs, exits, and outcomes.
+22. **Independent Validation / GEN Tournament judge:** evaluates candidate strategies out-of-sample and in paper tournaments with predeclared metrics and anti-overfit controls.
+23. **Learning / Memory curator:** preserves versioned research, evidence packets, loss autopsies, and experiment results; cannot silently change live risk settings or permissions.
+
+Each required debate role must produce its own evidence-linked assessment. The roster does not mean all 23 must be separate operating-system processes. Research/browser agents use isolated read-only workspaces and never receive broker credentials or order permissions. Absent, failed, stale, or unimplemented roles cannot count as approvals. GENs are strategy candidates, not extra live positions or extra bankrolls.
+
+## 17. Locked Angel One market-segment universe
+
+The agent must not be MCX-only. Discover and evaluate every segment actually supported and enabled for the user's Angel One account, subject to official broker/exchange rules, instrument availability, market hours, permissions, and affordability:
+
+- **NSE cash equities:** eligible shares with liquidity and affordable-quantity checks.
+- **NSE equity/index derivatives (F&O):** eligible futures/options only when lot size, margin/premium, risk, expiry, and permissions pass. Very small capital may make these unaffordable; never force them.
+- **BSE cash equities and supported derivatives:** include only after SmartAPI instruments, account permissions, and market data are verified.
+- **Currency derivatives:** include only supported and currently permitted contracts after broker/exchange eligibility and contract checks.
+- **MCX commodities:** supported eligible metals/energy and other contracts after actual lot size, margin, session, and charges checks.
+- **Other segments/instruments:** discover from the live instrument master and explicit broker permissions; do not assume availability just because a segment is listed here.
+- **No Binance/crypto** in the current plan.
+
+Maintain separate data-quality, liquidity, cost, session, contract, and paper-performance diagnostics per segment. Compare candidates on net expected edge after costs, drawdown, uncertainty, and evidence quality—not gross profit alone. Segment-specific read-only/paper checks must pass before expansion.
+
+## 18. Locked compounding and 6% rule
+
+- The hard cap is **6% of the latest broker-reconciled available trading capital for total position notional**, not 6% per agent, segment, symbol, or order. Splitting an intended position across agents, accounts, symbols, or orders to bypass the cap is prohibited.
+- After every closed trade is reconciled, calculate capital from actual broker/account state and realized net P&L after charges. Recalculate the next cap as reconciled capital multiplied by 0.06, rounded down to supported currency precision; round order quantity down to valid instrument increments and keep total notional inside the cap.
+- Profits increase only the rupee amount represented by 6%; they never increase the percentage. Losses, fees, withdrawals, and other capital reductions lower the next cap. Pending/unrealized profit is not treated as realized available capital unless an explicit risk policy and broker reconciliation support it.
+- The 6% notional cap is not a maximum-loss guarantee. Separate stop-loss/invalidation, gap-risk, slippage, margin, and emergency controls are required. If those controls cannot safely support a candidate, return NO TRADE.
+- If minimum quantity, lot size, premium, margin, fees, or broker rules make a trade exceed the cap or unaffordable, return NO TRADE. Never round quantity up to meet a minimum lot, borrow funds, or relax the percentage.
+- Tests must cover capital increases/decreases, fees and withdrawals, rounding, minimum lots too large, multiple-agent/order aggregation, concurrent order races, and restart recovery. Enforce the cap server-side immediately before order submission, not only in the UI.
+
+## 19. Locked reminders and progress discipline
+
+- Treat this master specification as the consolidated intended plan. If the user later explicitly changes a rule, update the specification deliberately and preserve an audit trail; do not silently drift.
+- Provide a daily reminder of the locked plan and pending work at approximately 9:00 AM Asia/Kolkata.
+- Every status update must distinguish **planned**, **implemented**, **automated-test passed**, **paper validated**, **operationally verified on the Azure VM**, and **live authorized**. Never claim one stage based on evidence from an earlier stage.
+- Current next steps: review/finish PR #59 CI and code review; integrate and verify dashboard/runtime behavior; perform authorized read-only Angel One validation and end-to-end paper tests across chosen segments; verify VM restart recovery and off-hours research; complete the required 7–14-day burn-in; keep live orders OFF until all checks pass and the operator separately authorizes activation.
+- The daily best setup report may recommend NO TRADE. Daily research does not grant permission to place a trade.
