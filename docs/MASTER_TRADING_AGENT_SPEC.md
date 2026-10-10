@@ -80,16 +80,46 @@ Status: consolidated product specification. This document records the intended b
 - CI green means automated repository checks passed only. It does not prove live-account validation or profitability.
 - Only after all evidence is reviewed may a candidate be marked live-ready; live trading remains disabled until the operator separately authorizes it.
 
-## 9. Current implementation status (must be kept honest)
+## 9. Trading City HQ visual and functional specification
+
+Use the uploaded 15-second video as the visual reference for the desired HQ—not as proof of an existing implementation.
+
+### Visual direction
+- Full-screen, dark/black futuristic command-center interface.
+- Large central animated neural/network visualization: distinct clusters/nodes for agents, strategies, risk, execution, research, and learning.
+- Animated lines/pulses show real messages/events between services; disconnected or unhealthy services must visibly show as disconnected, not keep animating as if healthy.
+- Subtle cyan, magenta, white and restrained red/amber accents on a dark background. Avoid cluttering the main network with tiny unreadable labels.
+- Compact monitoring panels along the bottom and/or sides, inspired by the video: agent logs, scan status, market feed, strategy metrics, P&L, risk gauges, recent events and service health.
+- Responsive layout for laptop first; mobile can show a simplified, legible view.
+
+### Functional panels
+- **Command Center:** current mode (PAPER/LIVE), live trading enabled/disabled, capital, ₹1,000 target progress, latest reconciled P&L, current 6% position cap, open position count, scan heartbeat and kill-switch state.
+- **Agent Network:** each GEN/service has an ID, status, last heartbeat, role and actual event connections. Show spawning, retirement, validation and promotion as real event-driven transitions.
+- **GEN Arena:** candidate comparison with net P&L after costs, trade count, drawdown, violations, champion eligibility and loss-autopsy links. Do not rank by gross P&L alone.
+- **Market Scanner:** number scanned versus configured ceiling, data freshness, eligible instruments, skipped symbols and reason codes. Never imply that a scan ceiling is the actual number of available tradable contracts.
+- **Risk & Execution Desk:** 6% notional limit, quantity/margin affordability, broker order/fill status, protective exits, reconciliation health, risk vetoes and halt reasons.
+- **Research & Memory:** strategy versions, research findings, prior loss autopsies and replacement GEN inheritance trail.
+- **Audit & Alerts:** timestamped decisions, errors, order lifecycle, service restarts, operator approvals and critical notifications.
+
+### Data integrity and interactions
+- All displayed states, metrics and connections must come from the backend/event stream or durable state. No fake live numbers, fake order events or simulated agent activity presented as real.
+- Label paper/simulated data clearly. Show last update time and stale-data warnings.
+- HQ must not itself enable live orders; the backend risk gate and separate operator approval remain authoritative.
+- On refresh/restart, restore the actual durable state and reconcile broker state; never reset capital or invent a new GEN because the page reloaded.
+- Test loading, empty, offline, stale, error and emergency-stop states, not only the attractive normal animation.
+- Verify frontend source, backend integration, browser rendering and responsive layout before marking HQ complete.
+
+## 10. Current implementation status (must be kept honest)
 
 As of the current PR work:
 - There is a foundation for MCX universe discovery, paper validation, GEN evolution, scorecards/loss retirement, Trading City/HQ state, and fail-closed live evidence gates.
 - Recent CI workflows passed on the latest branch snapshot, but this is not live trading evidence.
 - PR #57 remains open and calls out remaining HQ frontend verification and read-only Angel One paper validation.
+- PR #58 is a draft master-specification PR; this specification documents requirements, not completed functionality.
 - The complete end-to-end live GEN replacement loop, actual authorized Angel One account/feed validation, operational recovery, and Azure deployment must not be marked complete until verified by code/tests and operator-reviewed evidence.
 - Live orders remain disabled.
 
-## 10. Non-negotiable principles
+## 11. Non-negotiable principles
 
 1. ₹100 is the only initial capital; do not invent or reset funds.
 2. Position notional is capped at 6% of current reconciled capital.
