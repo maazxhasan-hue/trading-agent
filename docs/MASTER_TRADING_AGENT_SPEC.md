@@ -183,3 +183,24 @@ As of the current PR work:
 - Execute the next trade only if every gate passes and a valid, affordable setup exists. Otherwise record **NO TRADE** with reasons and continue monitoring; never force a trade to meet a frequency or profit target.
 - If a trade's result is not final, an order is partially filled/unknown, or broker reconciliation fails, stop new entries and reconcile first. Keep handling any existing position/protective orders safely.
 - Tests must verify that a completed trade triggers a fresh next-cycle evaluation without a fixed five-minute cooldown, and that unresolved outcomes/reconciliation failures block new entries.
+
+
+## 14. X (Twitter) intelligence and daily GEN improvement loop
+
+### X intelligence collection
+- When permitted access is configured, research agents should collect relevant public X posts and discussion context for the selected Indian-market instruments, companies, sectors, macro events, and market-moving announcements. Prefer official exchange/company/regulator accounts and original sources for factual claims.
+- Respect X's current access/API terms, rate limits, privacy controls, and content restrictions. Use an authorized API or permitted access path; do not bypass login, rate limits, paywalls, CAPTCHAs, or platform restrictions. If X access is unavailable or quota-limited, log the limitation and continue with other permitted sources rather than inventing X data.
+- Store source URL/post ID when available, author/account type, post and retrieval timestamps, extracted claim, topic/instrument mapping, and confidence/verification status. Distinguish original announcements from reposts, rumors, opinions, jokes, bots, and unverified claims. Avoid double-counting repeated/copied posts.
+- Cross-check material claims against authoritative exchange filings, company announcements, regulator notices, broker/exchange data, or other credible sources. X sentiment is contextual evidence only; it is not a standalone buy/sell trigger and must never override structured price data, unanimous debate, the risk gate, or operator authorization.
+- Detect spam/manipulation patterns, coordinated amplification, suspicious engagement, contradictory claims, and stale posts. When reliability is uncertain, lower confidence or exclude the signal and record why.
+- Include X findings and source links in the per-trade evidence packet and CEO-led debate when relevant. If no trustworthy X information is available, explicitly record “no verified X signal”; do not fabricate a signal.
+
+### Daily improvement and stronger-agent pipeline
+- Run a daily scheduled improvement cycle that reviews all GENs' decisions, skipped opportunities, trade outcomes, evidence quality, debate objections, prediction calibration, fees/slippage, drawdowns, and rule violations.
+- Generate versioned candidate improvements: strategy hypotheses, feature/data improvements, research prompts, debate quality checks, source reliability filters, execution simulations, and risk-model diagnostics. Preserve the prior version, experiment config, datasets/time windows, and rationale for every change.
+- Evaluate candidates in isolated offline/backtest and out-of-sample tests, then paper tournaments with realistic fees, slippage, data latency, and market-session constraints. Prevent look-ahead bias, leakage between training and evaluation, and tuning only to recent wins.
+- A candidate may be called “stronger” only if predeclared metrics show robust improvement against the incumbent across appropriate out-of-sample/paper samples, without violating drawdown, calibration, risk, or operational thresholds. Track uncertainty and minimum sample requirements; a single winning trade or one day's profit is not sufficient proof.
+- Promote the best qualified candidate to paper/validation only. Daily creation, cloning, mutation, or retraining never grants live order permissions, extra capital, larger position limits, or the ability to bypass unanimous debate and risk gates. Live promotion still requires all existing validation stages and separate explicit operator approval.
+- If no candidate passes, keep the current approved paper candidate unchanged and continue collecting evidence; do not force a daily replacement just to satisfy a schedule. The system should improve daily, but must not claim that each day's agent is objectively stronger without evidence.
+- Preserve durable model/strategy versions, experiment results, rejected candidates and reasons, and rollback ability across process/VM restarts and GEN retirement.
+- Tests must cover X access unavailable/rate-limited, duplicate/rumor/conflicting posts, source provenance, daily job failure/retry, no qualified candidate, out-of-sample leakage prevention, version rollback, and proof that new candidates cannot auto-enable live trading.
