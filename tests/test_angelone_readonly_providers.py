@@ -34,6 +34,7 @@ class Broker:
         return self.instrument_rows
 
     def funds_available(self, exchange="NSE"):
+        self.funds_exchange_arg = exchange
         return 50000.0
 
     def positions(self):
@@ -87,6 +88,8 @@ def test_account_snapshot_labels_funds_as_funds_not_margin():
     snapshot = providers.account_snapshot()
     assert snapshot["available_funds"] == 50000
     assert "required_margin" not in snapshot
+    # Account-level RMS funds must not be incorrectly scoped to MCX.
+    assert providers.broker.funds_exchange_arg == "NSE"
     assert snapshot["source"] == "angelone_smartapi_read_only_account"
 
 
