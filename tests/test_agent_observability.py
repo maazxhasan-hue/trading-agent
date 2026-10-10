@@ -40,7 +40,7 @@ class AgentObservabilityTests(unittest.TestCase):
             event_file = Path(temp) / "events.jsonl"
             event_file.write_text(
                 json.dumps({"type": "status", "ts": "2020-01-01T00:00:00+00:00",
-                            "status": {"market_scanner": "ACTIVE"}}) + "\\n",
+                            "status": {"market_scanner": "ACTIVE"}}) + "\n",
                 encoding="utf-8")
             with patch.object(obs, "EVENT_FILE", event_file):
                 payload = obs.agent_snapshot()
