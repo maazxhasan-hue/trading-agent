@@ -168,6 +168,12 @@ class AngelOneLiveEvidenceCollector:
             raise LiveOrderEvidenceUnavailable("market/protective-exit/reconciliation providers must return booleans")
         if risk["checks_passed"] is not True:
             raise LiveOrderEvidenceUnavailable("independent risk checks have not passed")
+        if market_open is not True:
+            raise LiveOrderEvidenceUnavailable("market session is closed or unverified")
+        if protective_exit is not True:
+            raise LiveOrderEvidenceUnavailable("protective-exit handling is not verified")
+        if reconciled is not True:
+            raise LiveOrderEvidenceUnavailable("broker order/fill reconciliation is unhealthy")
 
         return {
             "authorized_quote": True,
