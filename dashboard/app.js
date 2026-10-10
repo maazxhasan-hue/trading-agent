@@ -13,7 +13,7 @@ function render(){
     const q=S.quotes[k]||{};
     const age=q.quote_timestamp?Math.max(0,(Date.now()/1000)-Number(q.quote_timestamp)):null;
     const freshness=age!==null&&isFinite(age)?age.toFixed(1)+"s":"research";
-    return '<div class="row market-row '+(S.activeMarket===k?"selected":"")+'" data-symbol="'+k+'"><span><b>'+k+'</b><small>'+((q.provider)||"engine feed")+'</small></span><span><b>'+v+'</b><small>'+freshness+'</small></span></div>';
+    return '<div class="row market-row '+(S.activeMarket===k?"selected":"")+'" data-symbol="'+esc(k)+'"><span><b>'+esc(k)+'</b><small>'+esc(q.provider||"engine feed")+'</small></span><span><b>'+esc(v)+'</b><small>'+freshness+'</small></span></div>';
   }).join("");
   document.querySelectorAll(".market-row").forEach(el=>el.onclick=()=>{S.activeMarket=el.dataset.symbol;renderCandlePanel();});
   if(S.portfolio){
