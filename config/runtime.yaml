@@ -59,7 +59,9 @@ research_sources:
   - macro_events
   - event_calendar_optional
   - social_x_optional
-  - crypto
+  - global_markets
+  - exchange_announcements
+  - corporate_actions
   - cross_market
 
 require_event_calendar: false
