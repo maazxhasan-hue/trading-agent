@@ -8,20 +8,20 @@
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="brand-mark">◈</span><div><b>TRADING AGENT <em>HQ</em></b><small>NEURAL COMMAND // MCX AUTONOMOUS SYSTEM</small></div></div>
+  <div class="brand"><span class="brand-mark">◈</span><div><b>TRADING AGENT <em>HQ</em></b><small>NEURAL COMMAND // ANGEL ONE MULTI-SEGMENT</small></div></div>
   <div class="top-status"><span class="status-dot"></span><span id="mode">PAPER MODE</span><span class="top-sep">/</span><span id="clock">--:--:--</span><span class="top-sep">/</span><span id="conn">● CONNECTING</span></div>
 </header>
 <main>
   <section class="network-shell">
     <div class="section-tag"><span>01</span> NEURAL TOPOLOGY <i>LIVE ENGINE EVENT VISUALIZATION</i></div>
-    <div class="network-meta"><span>GENERATION CLUSTERS <b>05</b></span><span>MARKET GRAPH <b>MCX / FUTURES</b></span><span>SCAN TARGET <b>300 SEC</b></span></div>
+    <div class="network-meta"><span>GENERATION CLUSTERS <b>05</b></span><span>MARKET GRAPH <b>SUPPORTED INDIAN SEGMENTS</b></span><span>SCAN CADENCE <b>CONFIGURED 300 SEC</b></span></div>
     <div class="building">
       <canvas id="neural-canvas" aria-label="Animated neural network visualization"></canvas>
-      <div class="graph-label label-alpha"><b>GEN / 01</b><span>MOMENTUM CORE</span><i>● ACTIVE NODE</i></div>
-      <div class="graph-label label-beta"><b>GEN / 02</b><span>MEAN REVERSION</span><i>● STRATEGY CLUSTER</i></div>
-      <div class="graph-label label-gamma"><b>GEN / 03</b><span>EVENT INTELLIGENCE</span><i>● SIGNAL PATH</i></div>
-      <div class="graph-label label-delta"><b>GEN / 04</b><span>MCX SPECIALIST</span><i>● MARKET ANALYSIS</i></div>
-      <div class="graph-label label-epsilon"><b>GEN / 05</b><span>CROSS-MARKET</span><i>● CORRELATION MAP</i></div>
+      <div class="graph-label label-alpha"><b>GEN / 01</b><span>MOMENTUM CORE</span><i>● ROLE CLUSTER</i></div>
+      <div class="graph-label label-beta"><b>GEN / 02</b><span>MEAN REVERSION</span><i>● ROLE CLUSTER</i></div>
+      <div class="graph-label label-gamma"><b>GEN / 03</b><span>EVENT INTELLIGENCE</span><i>● ROLE CLUSTER</i></div>
+      <div class="graph-label label-delta"><b>GEN / 04</b><span>MCX SPECIALIST</span><i>● ROLE CLUSTER</i></div>
+      <div class="graph-label label-epsilon"><b>GEN / 05</b><span>CROSS-MARKET</span><i>● ROLE CLUSTER</i></div>
       <div class="graph-center"><span class="core-ring"></span><b>HQ</b><small>DECISION CORE</small></div>
       <div class="roaming-layer" id="roaming-layer"></div>
       <div class="legacy-map" aria-hidden="true">
@@ -33,8 +33,27 @@
     </div>
     <div class="network-foot"><span><i class="key cyan"></i> SIGNAL FLOW</span><span><i class="key pink"></i> STRATEGY NODE</span><span><i class="key white"></i> DATA LINK</span><span class="foot-note">VISUALIZATION IS DECORATIVE; LIVE VALUES COME FROM ENGINE EVENTS</span></div>
   </section>
+  <section class="agent-observatory">
+    <div class="section-tag"><span>02</span> INDIVIDUAL AGENT OBSERVATORY <i>REAL REGISTRY + RECORDED EVENTS</i></div>
+    <div id="agent-network-status" class="agent-network-status">CONNECTING TO REGISTRY…</div>
+    <div class="agent-observatory-tools">
+      <input id="agent-search" type="search" placeholder="Search agent, role or responsibility…" aria-label="Search agents">
+      <select id="agent-group" aria-label="Filter agent group">
+        <option value="all">All configured agents</option>
+        <option value="required">Required roles</option>
+        <option value="strategy_agents">Strategy agents</option>
+        <option value="debate_agents">Debate agents</option>
+      </select>
+      <button id="agent-refresh" type="button">Refresh registry</button>
+      <span id="agent-directory-count">Loading…</span>
+    </div>
+    <div class="agent-observatory-grid">
+      <div id="agent-directory" class="agent-directory"><div class="muted">Loading configured roles…</div></div>
+      <div id="agent-detail" class="agent-detail"><div class="muted">Select an agent to inspect its individual profile.</div></div>
+    </div>
+  </section>
   <section class="telemetry">
-    <div class="section-tag"><span>02</span> SYSTEM TELEMETRY <i>STREAMING EVENT PANELS</i></div>
+    <div class="section-tag"><span>03</span> SYSTEM TELEMETRY <i>STREAMING EVENT PANELS</i></div>
     <div class="telemetry-grid">
       <div class="panel activity-panel"><h3><b>01</b> LIVE ACTIVITY</h3><div id="activity"></div></div>
       <div class="panel agent-panel"><h3><b>02</b> AGENT STATUS</h3><div id="agents"></div></div>
@@ -50,5 +69,5 @@
   </section>
 </main>
 <footer><span>TRADING AGENT HQ</span><span>READ-ONLY VISUALIZATION · LIVE ORDERS NOT CONTROLLED FROM THIS PAGE</span><span>NO BROKER CREDENTIALS IN FRONTEND</span></footer>
-<script src="neural.js"></script><script src="app.js"></script>
+<script src="neural.js"></script><script src="app.js"></script><script src="agents.js"></script>
 </body></html>

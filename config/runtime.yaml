@@ -13,6 +13,36 @@ live_orders: false
 
 cloud_runtime: true
 restart_policy: unless-stopped
+runtime_timezone: Asia/Kolkata
+runtime_healthcheck_seconds: 30
+state_recovery_required: true
+single_engine_instance_required: true
+reconcile_broker_state_on_start: true
+fail_closed_on_recovery_error: true
+
+market_session:
+  venue: angelone_configured_exchange
+  use_exchange_calendar_when_available: true
+  use_timezone: Asia/Kolkata
+  live_entry_requires_verified_open_session: true
+  closed_session_policy: research_only
+  unknown_session_policy: no_live_entry
+  holidays_and_special_sessions_must_be_explicit: true
+
+off_hours_research:
+  enabled: true
+  collect_authorized_news_and_announcements: true
+  collect_macro_and_exchange_calendar: true
+  collect_global_market_context: true
+  collect_latest_available_history: true
+  review_trade_autopsies_and_strategy_metrics: true
+  build_next_session_watchlist: true
+  validate_sources_and_timestamps: true
+  paper_test_candidates_only: true
+  auto_promote_to_live: false
+  persist_research_journal: true
+  mark_unavailable_sources_explicitly: true
+  prohibit_fabricated_or_stale_live_quotes: true
 agent_browser_isolation: true
 agent_terminal_isolation: true
 browser_headless: true
@@ -29,7 +59,9 @@ research_sources:
   - macro_events
   - event_calendar_optional
   - social_x_optional
-  - crypto
+  - global_markets
+  - exchange_announcements
+  - corporate_actions
   - cross_market
 
 require_event_calendar: false
@@ -43,16 +75,18 @@ execution_risk:
   kill_switch: false
 
 market_feed:
-  endpoint: gamma_markets_keyset
+  provider: angelone_smartapi
+  instrument_master: refresh_from_authorized_broker
   page_size: 100
   min_request_interval_seconds: 2
   request_retries: 2
   backoff_base_seconds: 2
   max_retry_wait_seconds: 60
   rate_limit_cooldown_seconds: 900
-  cache_file: /data/gamma_markets_cache.json
-  cache_max_age_seconds: 900
+  cache_file: /data/angelone_instruments.json
+  cache_max_age_seconds: 86400
   stale_cache_is_scan_only: true
+  # Configuration contract only: runtime wiring and real account access must be verified separately.
 
 learning:
   file: /data/agent_learning.json

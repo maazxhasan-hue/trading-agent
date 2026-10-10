@@ -11,7 +11,12 @@ import os
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
+
+try:
+    from agent_observability import agent_snapshot
+except ImportError:
+    from dashboard.agent_observability import agent_snapshot
 
 ROOT = Path(__file__).resolve().parent
 EVENT_FILE = Path(os.getenv("HQ_EVENT_FILE", str(ROOT.parent / "data/hq_events.jsonl")))
@@ -36,6 +41,23 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/events":
             self._events()
+            return
+        if path == "/api/agents":
+            body = json.dumps(agent_snapshot(), separators=(",", ":")).encode("utf-8")
+            self._headers("application/json; charset=utf-8", len(body))
+            self.wfile.write(body)
+            self.wfile.flush()
+            return
+        if path == "/api/agent":
+            agent_id = parse_qs(urlparse(self.path).query).get("id", [""])[0]
+            item = agent_snapshot(agent_id)
+            if item is None:
+                self.send_error(404, "Unknown configured agent")
+                return
+            body = json.dumps(item, separators=(",", ":")).encode("utf-8")
+            self._headers("application/json; charset=utf-8", len(body))
+            self.wfile.write(body)
+            self.wfile.flush()
             return
         if path == "/health":
             body = b'{"ok":true,"service":"trading-agent-hq"}'

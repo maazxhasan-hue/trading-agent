@@ -28,5 +28,16 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+      - name: Set up Node.js for dashboard syntax checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check dashboard JavaScript syntax
+        run: |
+          node --check dashboard/app.js
+          node --check dashboard/agents.js
+          node --check dashboard/neural.js
+
       - name: Compile Python modules
         run: python -m compileall -q .
