@@ -72,7 +72,6 @@ strategy_agents:
   - momentum
   - mean_reversion
   - event_driven
-  - crypto_specialist
   - x_social_research
   - cross_market_arbitrage
   - volatility_regime
