@@ -129,3 +129,28 @@ As of the current PR work:
 6. No trade is better than an invalid, unaffordable, or unsafe trade.
 7. Profit is a goal, never a guarantee.
 8. Safety controls survive every GEN retirement and process restart.
+
+
+## 10. Per-agent browser and evidence-first trading
+
+### Dedicated browser workspace for every agent
+- Every GEN/agent that performs market research must have its own isolated browser workspace, with a unique agent ID, profile/session storage, tabs, navigation history, research notes, and activity log. Use a separate headless Chrome/Chromium instance or a strongly isolated browser context/profile per agent, depending on the runtime's supported architecture; do not assume every agent needs a separately installed copy of the Chrome application.
+- Browser sessions must not share cookies, authenticated sessions, local storage, or credentials across agents. Broker credentials and order-entry permissions must not be exposed to research browsers. Research agents are read-only by default.
+- Show each agent's browser state in HQ: running/stopped, current page/domain, last navigation, research task, last evidence timestamp, and any blocked/error state. Never expose secrets, authentication tokens, or sensitive account details in the UI or logs.
+- Browser automation must obey website terms, robots/access restrictions where applicable, rate limits, and safe browsing controls. Do not bypass CAPTCHAs, paywalls, access controls, or anti-bot protections. If a source is inaccessible, record that and use another permitted source.
+
+### Evidence-first decision process (no random trades)
+- No agent may recommend a trade merely because it was spawned, because a timer fired, or because it needs to hit a P&L target. A scan cycle may legitimately end with **NO TRADE**.
+- For each candidate, collect a timestamped evidence packet before recommending it: instrument and venue, fresh price/quote and source, relevant price/volume/volatility history, spread/liquidity, market/session status, the specific strategy signal and its calculation, relevant permitted news/events if applicable, estimated fees/taxes/slippage, expected entry/exit logic, invalidation/stop conditions, position-size/margin check, and the reasons for rejecting stronger alternatives.
+- Keep market facts separate from hypotheses and opinions. Store source URLs, retrieval timestamps, key extracted claims/observations, data freshness, and confidence/limitations so the decision can be audited and reproduced. Do not treat search-result snippets, social posts, or an LLM-generated summary alone as verified market data.
+- Prefer authoritative broker/exchange instrument and quote data for price, trading status, contract specifications, and account/margin facts. Browser research can add context, but cannot override broker data, exchange rules, risk limits, or the backend's final eligibility checks.
+- Require deterministic strategy/risk checks on structured data after research. A browser or language model may propose and explain a candidate, but it must never directly submit an order or bypass the single-position invariant, 6% position-notional cap, affordability checks, freshness checks, or operator approval.
+- Before any paper/live candidate is accepted, the system must log: evidence packet ID, strategy/version, candidate score and calculation, risk-gate result, expected costs, decision explanation, and explicit trade/skip reason. For a skipped candidate, preserve reason codes (for example: stale data, weak signal, excessive spread, unaffordable lot/margin, missing evidence, session closed, or risk veto).
+- If evidence is missing, contradictory, stale, not attributable to a source, or fails validation, the agent must abstain and request more evidence or return NO TRADE. Never fabricate a source, price, signal, confidence, browser action, or successful order.
+- After every paper or closed live trade, compare the thesis with actual outcome, fees, slippage, and execution; save a loss/win autopsy and use it to inform future paper experiments. Learning may adjust hypotheses/parameters only through versioned, tested evaluation—not by silently changing live risk rules.
+
+### Browser and evidence validation gates
+- Tests must prove browser workspaces are isolated between two or more agents, restart safely, and cannot leak credentials or authenticated state.
+- Tests must verify stale/missing/contradictory sources produce a skip, every trade recommendation has a complete evidence packet, and every skip has an auditable reason.
+- Tests must confirm browser agents cannot submit broker orders and that only the existing backend risk/execution gate can authorize an order.
+- The HQ may animate browser/network activity only from real telemetry. If a browser is stopped, disconnected, or has no fresh evidence, show that actual state rather than decorative activity.
