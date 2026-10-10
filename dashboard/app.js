@@ -1,12 +1,13 @@
 const AGENTS={momentum:"Momentum",mean_reversion:"Mean Reversion",event_driven:"Event Driven",mcx:"MCX Specialist",arbitrage:"Cross-Market",research:"Research",bull:"Bull",bear:"Bear",quant:"Quant",news:"News/Social",redteam:"Red Team",risk:"Risk",chief:"Chief"};
 const S={events:[],status:{},analysis:[],markets:{GOLD:"—",SILVER:"—",CRUDEOIL:"—",NATURALGAS:"—",COPPER:"—"},quotes:{},live:false,evidence:null,portfolio:null,trades:[],candles:{},learning:null,activeMarket:null};
 const $=id=>document.getElementById(id);
+const esc=value=>String(value??"").replace(/[&<>"\']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","\'":"&#39;"}[ch]));
 
 function render(){
   $("clock").textContent=new Date().toLocaleTimeString();
   $("agents").innerHTML=Object.entries(AGENTS).map(([k,n])=>{
     const st=S.status[k]||"NOT RUN / NO DATA";
-    return '<div class="row"><span>'+n+'</span><span class="pill '+(["WORKING","ACTIVE"].includes(st)?"good":"")+'">'+st+"</span></div>";
+    return '<div class="row"><span>'+n+'</span><span class="pill '+(["WORKING","ACTIVE"].includes(st)?"good":"")+'">'+esc(st)+"</span></div>";
   }).join("");
   $("markets").innerHTML=Object.entries(S.markets).map(([k,v])=>{
     const q=S.quotes[k]||{};
@@ -35,14 +36,14 @@ function render(){
   renderAnalysis();
   $("trades").innerHTML=S.trades.slice(-12).reverse().map(t=>{
     const pnl=t.pnl===undefined?"":' P&L ₹'+Number(t.pnl).toFixed(2);
-    return '<div class="trade '+(t.action==="OPEN"?"open":"close")+'"><b>'+t.action+'</b> '+t.symbol+' '+t.side+' × '+t.quantity+' @ '+Number(t.price||0).toFixed(2)+pnl+'<small>'+(t.reason||("score "+Number(t.score||0).toFixed(2)))+'</small></div>';
+    return '<div class="trade '+(t.action==="OPEN"?"open":"close")+'"><b>'+esc(t.action)+'</b> '+esc(t.symbol)+' '+esc(t.side)+' × '+esc(t.quantity)+' @ '+Number(t.price||0).toFixed(2)+esc(pnl)+'<small>'+esc(t.reason||("score "+Number(t.score||0).toFixed(2)))+'</small></div>';
   }).join("") || '<div class="muted">No paper trades yet.</div>';
-  $("activity").innerHTML=S.events.slice(-35).reverse().map(e=>'<div class="event"><small>'+e.time+'</small><b>'+e.agent+"</b> — "+e.text+"</div>").join("");
+  $("activity").innerHTML=S.events.slice(-35).reverse().map(e=>'<div class="event"><small>'+esc(e.time)+'</small><b>'+esc(e.agent)+"</b> — "+esc(e.text)+"</div>").join("");
   if(S.evidence){
     const f=S.evidence.features||{}, v=S.evidence.votes||{};
-    const features=Object.entries(f).map(([k,val])=>'<span class="evidence-chip">'+k+' '+val+'</span>').join("");
-    const votes=Object.entries(v).map(([k,val])=>'<div class="row"><span>'+k+'</span><span>'+Number(val).toFixed(3)+'</span></div>').join("");
-    $("evidence").innerHTML='<b>'+S.evidence.symbol+'</b><div class="chips">'+features+'</div>'+votes+'<div class="evidence-decision">Decision: '+(S.evidence.decision||"ANALYZING")+'</div>';
+    const features=Object.entries(f).map(([k,val])=>'<span class="evidence-chip">'+esc(k)+' '+esc(val)+'</span>').join("");
+    const votes=Object.entries(v).map(([k,val])=>'<div class="row"><span>'+esc(k)+'</span><span>'+Number(val).toFixed(3)+'</span></div>').join("");
+    $("evidence").innerHTML='<b>'+esc(S.evidence.symbol)+'</b><div class="chips">'+features+'</div>'+votes+'<div class="evidence-decision">Decision: '+esc(S.evidence.decision||"ANALYZING")+'</div>';
   }
 }
 
@@ -78,7 +79,7 @@ function ensureRoamer(id){
     r=document.createElement("div");
     r.id="roamer-"+id;
     r.className="roamer worker-suit";
-    r.innerHTML='<span class="worker-head"></span><span class="worker-body"></span><span class="worker-label">'+(AGENTS[id]||id)+'</span>';
+    r.innerHTML='<span class="worker-head"></span><span class="worker-body"></span><span class="worker-label">'+esc(AGENTS[id]||id)+'</span>';
     layer.appendChild(r);
   }
   return r;
@@ -176,7 +177,7 @@ function renderAnalysis(){
   if(!box)return;
   const rows=S.analysis.slice(-10).reverse().map(x=>{
     const ev=(x.evidence||[]).slice(0,3).join(" • ");
-    return '<div class="analysis-card"><div class="analysis-top"><b>'+String(x.agent||"Agent")+'</b><span>'+String(x.symbol||"—")+'</span><span class="analysis-action">'+String(x.action||"ANALYZING")+'</span></div><div class="analysis-thesis">'+String(x.thesis||"Evaluating market evidence…")+'</div><div class="analysis-evidence">'+(ev||"No additional evidence reported")+'</div><small>confidence '+(x.confidence==null?"—":(Number(x.confidence)*100).toFixed(1)+"%")+' • adaptation '+String(x.adaptation||"baseline")+'</small></div>';
+    return '<div class="analysis-card"><div class="analysis-top"><b>'+esc(x.agent||"Agent")+'</b><span>'+esc(x.symbol||"—")+'</span><span class="analysis-action">'+esc(x.action||"ANALYZING")+'</span></div><div class="analysis-thesis">'+esc(x.thesis||"Evaluating market evidence…")+'</div><div class="analysis-evidence">'+esc(ev||"No additional evidence reported")+'</div><small>confidence '+(x.confidence==null?"—":(Number(x.confidence)*100).toFixed(1)+"%")+' • adaptation '+esc(x.adaptation||"baseline")+'</small></div>';
   }).join("");
   box.innerHTML=rows||'<div class="muted">Waiting for agent analysis…</div>';
 }
@@ -190,11 +191,11 @@ function renderLearning(){
     const weight=d.weight===undefined?(d.forecasts>=30?((Number(d.accuracy)-.5)*1.2+1).toFixed(2):"1.00"):Number(d.weight).toFixed(2);
     const delta=(Number(weight)-1);
     const adaptation=delta>0.02?"boosted":delta<-0.02?"reduced":"baseline";
-    return '<div class="learning-row"><div><b>'+a.replace("-v3","")+'</b><small>'+((d.qualified?"QUALIFIED":"LEARNING")+" • "+(d.reason||"evaluating"))+'</small></div><div><span>'+d.forecasts+' forecasts</span><span>acc '+acc+'</span><span>recent '+recent+'</span><span>weight '+weight+' ('+adaptation+')</span></div></div>';
+    return '<div class="learning-row"><div><b>'+esc(a.replace("-v3",""))+'</b><small>'+esc((d.qualified?"QUALIFIED":"LEARNING")+" • "+(d.reason||"evaluating"))+'</small></div><div><span>'+Number(d.forecasts||0)+' forecasts</span><span>acc '+acc+'</span><span>recent '+recent+'</span><span>weight '+weight+' ('+adaptation+')</span></div></div>';
   }).join("");
   const last=(l.last_resolved||[]).slice(-4).reverse().map(x=>{
     const move=x.realized_move==null?"":(Number(x.realized_move)*100).toFixed(3)+"%";
-    return '<div class="learn-event"><b>'+String(x.market_id||"market")+'</b> '+(Number(x.outcome)>0?"UP":Number(x.outcome)<0?"DOWN":"NEUTRAL")+' <small>'+move+'</small></div>';
+    return '<div class="learn-event"><b>'+esc(x.market_id||"market")+'</b> '+(Number(x.outcome)>0?"UP":Number(x.outcome)<0?"DOWN":"NEUTRAL")+' <small>'+move+'</small></div>';
   }).join("");
   $("learning").innerHTML='<div class="learning-head"><b>Intelligence & Adaptation</b><span>'+Number(l.observations||0)+' observations • '+Number(l.history||0)+' resolved • '+Number(l.resolved||0)+' new</span></div>'+rows+'<div class="learning-new"><b>What changed recently</b>'+ (last||'<div class="muted">No resolved learning updates yet.</div>')+'</div>';
 }
