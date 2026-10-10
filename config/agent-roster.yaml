@@ -1,28 +1,72 @@
 company: trading-company
 
+# These are logical roles. Runtime status must come from the registry/heartbeat,
+# never from this file alone. Missing required roles fail closed.
+coordination:
+  protocol: versioned_evidence_packet
+  transport: durable_event_bus
+  shared_store: append_only_decision_journal
+  require_agent_identity: true
+  require_source_provenance: true
+  require_freshness_metadata: true
+  reject_duplicate_evidence: true
+  no_shared_broker_credentials_with_research: true
+  no_agent_can_override_risk_gate: true
+  decision_policy: unanimous_required_roles
+  missing_or_stale_agent_policy: no_trade
+
 required_agents:
   orchestrator:
     role: ceo
+    outputs: [cycle_plan, decision_summary, dissent_log]
   market_scanner:
     role: broad_market_scan
+    outputs: [universe_snapshot, candidate_queue]
+  data_quality:
+    role: source_integrity_and_freshness
+    outputs: [data_quality_report, stale_or_conflicting_sources]
+  regime:
+    role: market_regime_detection
+    outputs: [regime_label, regime_confidence, invalidation_conditions]
   fair_value:
     role: fair_value
+    outputs: [fair_value_estimate, uncertainty_interval, edge_after_costs]
+  liquidity:
+    role: liquidity_and_slippage
+    outputs: [depth_report, spread_report, slippage_estimate]
+  macro_events:
+    role: macro_calendar_and_event_risk
+    outputs: [event_risk_report, scheduled_event_window]
   red_team:
     role: adversarial_review
+    outputs: [failure_modes, counter_thesis, blocking_objections]
   risk:
     role: risk_manager
+    outputs: [independent_risk_verdict, maximum_permitted_size]
   portfolio:
     role: portfolio_manager
+    outputs: [exposure_report, correlation_report, affordability]
   execution:
     role: execution
+    outputs: [execution_plan, order_state, reconciliation_result]
+  execution_quality:
+    role: execution_quality_monitor
+    outputs: [fill_quality, slippage_vs_estimate, venue_health]
   post_trade:
     role: post_trade_analysis
+    outputs: [attribution_report, lessons, follow_up_tests]
   agent_health:
     role: lifecycle_manager
+    outputs: [heartbeat_status, qualification_status, quarantine_actions]
   treasury:
     role: operating_budget
+    outputs: [approved_service_budget, spend_status]
   audit:
     role: audit
+    outputs: [immutable_decision_record, policy_compliance_report]
+  validation:
+    role: independent_model_validation
+    outputs: [calibration_report, walk_forward_result, promotion_verdict]
 
 strategy_agents:
   - momentum
@@ -31,14 +75,72 @@ strategy_agents:
   - crypto_specialist
   - x_social_research
   - cross_market_arbitrage
+  - volatility_regime
+  - order_book_imbalance
+  - trend_breakout
+  - market_microstructure
 
 debate_agents:
   - bull
   - bear
   - quant
   - news_social
+  - skeptic
+  - independent_validator
+
+# Every agent sends structured evidence/proposals to the durable bus and reads
+# the same cycle ID. Agents must not silently overwrite another agent's result.
+collaboration:
+  cycle_id_required: true
+  message_schema_version: 1
+  evidence_fields:
+    - agent_id
+    - cycle_id
+    - created_at
+    - expires_at
+    - source
+    - source_timestamp
+    - instrument
+    - claim
+    - confidence
+    - uncertainty
+    - supporting_evidence
+    - contradicting_evidence
+    - dependencies
+  required_handoffs:
+    - [market_scanner, data_quality]
+    - [data_quality, fair_value]
+    - [regime, strategy_agents]
+    - [macro_events, strategy_agents]
+    - [x_social_research, news_social]
+    - [strategy_agents, quant]
+    - [quant, bull]
+    - [quant, bear]
+    - [bull, skeptic]
+    - [bear, skeptic]
+    - [skeptic, red_team]
+    - [red_team, risk]
+    - [liquidity, portfolio]
+    - [risk, orchestrator]
+    - [portfolio, execution]
+    - [execution, execution_quality]
+    - [execution, post_trade]
+    - [post_trade, validation]
+    - [validation, agent_health]
+  veto_rules:
+    - stale_or_unverifiable_evidence
+    - missing_required_role
+    - unresolved_material_disagreement
+    - risk_gate_rejection
+    - broker_state_not_reconciled
+    - duplicate_or_ambiguous_order_state
+  research_is_read_only: true
+  require_independent_risk_verdict: true
+  require_post_trade_feedback: true
 
 replacement_policy:
   quarantine_after_rule_violations: 2
   calibration_floor: 0.55
   validate_before_reactivation: true
+  no_automatic_live_promotion: true
+  preserve_incumbent_until_candidate_passes: true
