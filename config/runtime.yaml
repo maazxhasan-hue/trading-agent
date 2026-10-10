@@ -75,16 +75,18 @@ execution_risk:
   kill_switch: false
 
 market_feed:
-  endpoint: gamma_markets_keyset
+  provider: angelone_smartapi
+  instrument_master: refresh_from_authorized_broker
   page_size: 100
   min_request_interval_seconds: 2
   request_retries: 2
   backoff_base_seconds: 2
   max_retry_wait_seconds: 60
   rate_limit_cooldown_seconds: 900
-  cache_file: /data/gamma_markets_cache.json
-  cache_max_age_seconds: 900
+  cache_file: /data/angelone_instruments.json
+  cache_max_age_seconds: 86400
   stale_cache_is_scan_only: true
+  # Configuration contract only: runtime wiring and real account access must be verified separately.
 
 learning:
   file: /data/agent_learning.json
