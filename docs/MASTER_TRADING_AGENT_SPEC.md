@@ -8,7 +8,7 @@ Status: consolidated product specification. This document records the intended b
 - Current target universe: Angel One instruments eligible for the selected Indian-market segments; prioritize supported cash-market instruments when affordable. MCX futures remain in scope only when actual contract lot size, margin, charges, and risk budget are affordable.
 - Do not use Binance or crypto trading in the current live-trading plan.
 - Discover the actual available instrument master at runtime. A scan ceiling of 1,000 markets is a ceiling, not a claim that 1,000 tradable contracts exist.
-- Scan on a five-minute cycle when market/session/API conditions allow. Respect exchange trading hours, holidays, rate limits, and stale-data checks.
+- Use continuous/event-driven market scanning while the market is open and data/API limits allow; a five-minute interval is not a mandatory wait between trades. Respect exchange trading hours, holidays, rate limits, and stale-data checks. The next trade may be considered only after the prior trade's final outcome and broker state are fully reconciled.
 
 ## 2. Capital, compounding, and trade sizing
 
@@ -31,7 +31,7 @@ Status: consolidated product specification. This document records the intended b
 5. Submit only through the approved Angel One adapter. Track order acknowledgement, fills, rejects, partial fills, exits, and protective orders.
 6. Do not assume an order succeeded from an API request alone. Reconcile broker orders, fills, and positions.
 7. On close, calculate realized net P&L and update the durable capital/trade ledger.
-8. Only then may the next scan/entry cycle begin.
+8. Only then begin a fresh decision cycle immediately when market/session/API conditions allow: refresh all required market/account data, rebuild the candidate list, collect new evidence, run the CEO-led adversarial debate and unanimous consensus, and re-check the backend risk gate. Do not reuse the previous trade's stale evidence or wait for a fixed five-minute timer solely because a trade just closed. If the prior result is unresolved or reconciliation is incomplete, do not open another trade.
 
 ## 4. GEN tournament, elimination, and replacement
 
@@ -173,3 +173,13 @@ As of the current PR work:
 - Verify the system emits NO TRADE for every failed-consensus case and that the CEO cannot override a hard risk rejection.
 - HQ must show each role's status and vote, evidence links, objection/rebuttal thread, debate round, final consensus result, backend risk-gate result, and the final trade/skip reason using real persisted events. Do not show invented debates or votes.
 - Every decision must remain auditable after a GEN is retired, a replacement is spawned, or the process restarts.
+
+
+## 13. Trade-to-trade cycle timing clarification (supersedes any ambiguous five-minute wording)
+
+- The five-minute value is a possible market-scan/heartbeat cadence only; it is **not** a required cooldown or fixed interval between trades.
+- Maintain continuous or event-driven scanning during supported market hours within API/data rate limits. Candidate discovery may run while a position is open, but no second position/order entry may be initiated until the current trade's final outcome is known and broker orders, fills, positions, and charges have been reconciled.
+- Immediately after a trade is definitively closed and reconciled, start the next decision cycle: refresh live quotes and instrument/session data; fetch updated funds, positions, and order state; calculate the new reconciled capital and 6% cap; scan/re-rank candidates; gather fresh per-agent browser/evidence packets; conduct the full CEO-led adversarial debate; require every required role's explicit approval; then run the independent deterministic risk/execution gate.
+- Execute the next trade only if every gate passes and a valid, affordable setup exists. Otherwise record **NO TRADE** with reasons and continue monitoring; never force a trade to meet a frequency or profit target.
+- If a trade's result is not final, an order is partially filled/unknown, or broker reconciliation fails, stop new entries and reconcile first. Keep handling any existing position/protective orders safely.
+- Tests must verify that a completed trade triggers a fresh next-cycle evaluation without a fixed five-minute cooldown, and that unresolved outcomes/reconciliation failures block new entries.
