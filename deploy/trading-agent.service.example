@@ -12,6 +12,7 @@ Group=trading-agent
 WorkingDirectory=/opt/trading-agent
 EnvironmentFile=-/etc/trading-agent/trading-agent.env
 Environment=LIVE_TRADING=false
+Environment=TRADING_BACKEND=angelone_nse
 Environment=ANGELONE_READONLY=true
 Environment=PYTHONUNBUFFERED=1
 Environment=TZ=Asia/Kolkata
