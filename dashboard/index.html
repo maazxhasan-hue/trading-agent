@@ -33,8 +33,27 @@
     </div>
     <div class="network-foot"><span><i class="key cyan"></i> SIGNAL FLOW</span><span><i class="key pink"></i> STRATEGY NODE</span><span><i class="key white"></i> DATA LINK</span><span class="foot-note">VISUALIZATION IS DECORATIVE; LIVE VALUES COME FROM ENGINE EVENTS</span></div>
   </section>
+  <section class="agent-observatory">
+    <div class="section-tag"><span>02</span> INDIVIDUAL AGENT OBSERVATORY <i>REAL REGISTRY + RECORDED EVENTS</i></div>
+    <div id="agent-network-status" class="agent-network-status">CONNECTING TO REGISTRY…</div>
+    <div class="agent-observatory-tools">
+      <input id="agent-search" type="search" placeholder="Search agent, role or responsibility…" aria-label="Search agents">
+      <select id="agent-group" aria-label="Filter agent group">
+        <option value="all">All configured agents</option>
+        <option value="required">Required roles</option>
+        <option value="strategy_agents">Strategy agents</option>
+        <option value="debate_agents">Debate agents</option>
+      </select>
+      <button id="agent-refresh" type="button">Refresh registry</button>
+      <span id="agent-directory-count">Loading…</span>
+    </div>
+    <div class="agent-observatory-grid">
+      <div id="agent-directory" class="agent-directory"><div class="muted">Loading configured roles…</div></div>
+      <div id="agent-detail" class="agent-detail"><div class="muted">Select an agent to inspect its individual profile.</div></div>
+    </div>
+  </section>
   <section class="telemetry">
-    <div class="section-tag"><span>02</span> SYSTEM TELEMETRY <i>STREAMING EVENT PANELS</i></div>
+    <div class="section-tag"><span>03</span> SYSTEM TELEMETRY <i>STREAMING EVENT PANELS</i></div>
     <div class="telemetry-grid">
       <div class="panel activity-panel"><h3><b>01</b> LIVE ACTIVITY</h3><div id="activity"></div></div>
       <div class="panel agent-panel"><h3><b>02</b> AGENT STATUS</h3><div id="agents"></div></div>
@@ -50,5 +69,5 @@
   </section>
 </main>
 <footer><span>TRADING AGENT HQ</span><span>READ-ONLY VISUALIZATION · LIVE ORDERS NOT CONTROLLED FROM THIS PAGE</span><span>NO BROKER CREDENTIALS IN FRONTEND</span></footer>
-<script src="neural.js"></script><script src="app.js"></script>
+<script src="neural.js"></script><script src="app.js"></script><script src="agents.js"></script>
 </body></html>
