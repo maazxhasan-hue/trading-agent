@@ -132,7 +132,9 @@ class AngelOneReadOnlyEvidenceProviders:
         'available_funds' is a broker-reported account field, NOT an MCX contract
         margin calculation. Consumers must not map it to required_margin.
         """
-        funds = self.broker.funds_available("MCX")
+        # RMS funds are account-level broker figures, not segment-specific margin.
+        # Do not hardcode MCX here: this snapshot is shared by NSE and MCX logic.
+        funds = self.broker.funds_available()
         positions_result = self.broker.positions()
         orders = self.broker.orders()
         if funds is None:
