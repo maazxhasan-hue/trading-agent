@@ -136,6 +136,10 @@ def agent_snapshot(agent_id=None):
         elif status_event:
             item["status"] = status_event["status"]
             item["last_seen"] = status_event["ts"]
+            # A historical ACTIVE/WORKING status is not proof of a live worker.
+            status_age = now - _parse_time(status_event["ts"])
+            if item["status"] in {"ACTIVE", "WORKING", "RUNNING", "MONITORING", "CONNECTED", "HEALTHY"} and status_age >= 120:
+                item["status"] = "STALE"
             item["last_activity"] = None
         else:
             item["status"] = "NOT RUN / NO DATA"
