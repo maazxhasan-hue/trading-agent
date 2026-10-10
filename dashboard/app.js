@@ -1,13 +1,12 @@
 const AGENTS={momentum:"Momentum",mean_reversion:"Mean Reversion",event_driven:"Event Driven",mcx:"MCX Specialist",arbitrage:"Cross-Market",research:"Research",bull:"Bull",bear:"Bear",quant:"Quant",news:"News/Social",redteam:"Red Team",risk:"Risk",chief:"Chief"};
 const S={events:[],status:{},analysis:[],markets:{GOLD:"—",SILVER:"—",CRUDEOIL:"—",NATURALGAS:"—",COPPER:"—"},quotes:{},live:false,evidence:null,portfolio:null,trades:[],candles:{},learning:null,activeMarket:null};
-Object.keys(AGENTS).forEach(k=>S.status[k]="MONITORING");
 const $=id=>document.getElementById(id);
 
 function render(){
   $("clock").textContent=new Date().toLocaleTimeString();
   $("agents").innerHTML=Object.entries(AGENTS).map(([k,n])=>{
-    const st=S.status[k]||"MONITORING";
-    return '<div class="row"><span>'+n+'</span><span class="pill '+(st!=="IDLE"?"good":"")+'">'+st+"</span></div>";
+    const st=S.status[k]||"NOT RUN / NO DATA";
+    return '<div class="row"><span>'+n+'</span><span class="pill '+(["WORKING","ACTIVE"].includes(st)?"good":"")+'">'+st+"</span></div>";
   }).join("");
   $("markets").innerHTML=Object.entries(S.markets).map(([k,v])=>{
     const q=S.quotes[k]||{};
@@ -236,4 +235,3 @@ function connect(){
 setInterval(render,1000);
 render();
 connect();
-start24x7Patrol();
