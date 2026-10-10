@@ -35,6 +35,18 @@ class AgentObservabilityTests(unittest.TestCase):
             self.assertIsNone(scanner["last_seen"])
             self.assertEqual(scanner["research"], [])
 
+    def test_old_active_status_event_is_not_reported_as_live(self):
+        with tempfile.TemporaryDirectory() as temp:
+            event_file = Path(temp) / "events.jsonl"
+            event_file.write_text(
+                json.dumps({"type": "status", "ts": "2020-01-01T00:00:00+00:00",
+                            "status": {"market_scanner": "ACTIVE"}}) + "\\n",
+                encoding="utf-8")
+            with patch.object(obs, "EVENT_FILE", event_file):
+                payload = obs.agent_snapshot()
+            scanner = next(a for a in payload["agents"] if a["id"] == "market_scanner")
+            self.assertEqual(scanner["status"], "STALE")
+
     def test_profile_contains_only_actual_agent_analysis_events(self):
         with tempfile.TemporaryDirectory() as temp:
             event_file = Path(temp) / "events.jsonl"
