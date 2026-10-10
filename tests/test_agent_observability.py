@@ -15,7 +15,15 @@ class AgentObservabilityTests(unittest.TestCase):
         self.assertIn("market_scanner", ids)
         self.assertIn("momentum", ids)
         self.assertIn("bull", ids)
+        self.assertNotIn("crypto_specialist", ids)
         self.assertGreaterEqual(len(agents), 20)
+
+    def test_runtime_config_does_not_point_to_obsolete_gamma_feed(self):
+        runtime = obs.ROOT / "config" / "runtime.yaml"
+        config = runtime.read_text(encoding="utf-8")
+        self.assertIn("provider: angelone_smartapi", config)
+        self.assertIn("/data/angelone_instruments.json", config)
+        self.assertNotIn("gamma_markets", config)
 
     def test_never_run_agents_are_not_falsely_marked_active(self):
         with tempfile.TemporaryDirectory() as temp:
