@@ -87,6 +87,25 @@ class StrategyValidationCostsTests(unittest.TestCase):
         self.assertEqual(report["status"], "MISSING_REGIME_LABEL")
         self.assertFalse(report["paper_only_qualified"])
 
+    def test_unknown_regime_label_cannot_qualify(self):
+        candidate = [self.trade(i, regime="UNKNOWN") for i in range(30)]
+        baseline = [self.trade(i, strategy="baseline") for i in range(30)]
+
+        report = self.report(candidate, baseline)
+
+        self.assertEqual(report["status"], "MISSING_REGIME_LABEL")
+        self.assertFalse(report["paper_only_qualified"])
+
+    def test_sparse_baseline_coverage_cannot_qualify(self):
+        candidate = [self.trade(i) for i in range(30)]
+        baseline = [self.trade(i, strategy="baseline") for i in range(30)]
+        sparse_baseline = [baseline[10]]
+
+        report = self.report(candidate, sparse_baseline)
+
+        self.assertEqual(report["status"], "BASELINE_INSUFFICIENT_SAMPLES")
+        self.assertFalse(report["paper_only_qualified"])
+
     def test_walk_forward_excludes_training_and_incomplete_future_window(self):
         candidate = [self.trade(i, gross=1.0) for i in range(31)]
         baseline = [self.trade(i, strategy="baseline", gross=0.2) for i in range(31)]
@@ -150,3 +169,4 @@ class StrategyValidationCostsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
