@@ -14,7 +14,7 @@ Success means: each enabled strategy emits an attributable, testable proposal; t
 
 ## Current repository shape
 
-The repository already contains NSE/MCX agent entry points and an Angel One SmartAPI adapter/order manager. Existing strategy-related components include fair-value, momentum and mean-reversion signals, NSE regime classification, event research, debate/red-team and risk roles, MCX paper tournaments/evolution, and chronological validation/agent-health checks. The Angel One adapter already has live/read-only separation, an order manager and a guarded live-order gate. This work should extend those paths rather than bypass or replace them.
+The repository already contains NSE/MCX agent entry points and an Angel One SmartAPI adapter/order manager. The production `NSETradingCompany.agent_votes` path emits momentum, mean-reversion, event-driven, MCX commodity-specialist, and cross-market-arbitrage votes, then applies regime classification, debate, and risk checks. The separate `signals.py` fair-value/momentum/reversion helpers are used by research validation code, not currently called by the company scan path; do not silently treat them as production strategies. The system also has MCX paper tournaments/evolution and chronological validation/agent-health checks. The Angel One adapter already has live/read-only separation, an order manager and a guarded live-order gate. This work should extend those paths rather than bypass or replace them.
 
 The current production VM was observed with `TRADING_BACKEND=mcx`, `LIVE_TRADING=false`, auth status `AUTH_REQUIRED`, and a dirty `/opt/trading-agent` checkout. A read-only diagnostic was installed there, but the merged authentication change and this future strategy work have not been activated by restarting the trading service. Do not overwrite its unrelated local changes.
 
@@ -31,7 +31,7 @@ Keep each strategy deterministic and independent from the broker. A strategy con
 - estimated gross edge and estimated costs (fees, spread, slippage, and applicable taxes/charges);
 - the data and validation version used to enable that strategy.
 
-The initial candidate set is the repository's existing fair-value, momentum/trend, mean-reversion, regime and event-driven logic. Add breakout/range or other families only where a measurable gap exists and data supports validation. Do not interpret “all strategies” as every possible indicator combination. Do not expand instrument coverage to options, currencies, or other products in this scope.
+The initial candidate set is the production vote families already in `agent_votes`: momentum/trend, mean-reversion, event-driven, MCX commodity specialist, and cross-market arbitrage. Regime is shared context. The standalone fair-value helper is not wired into this path; integrate it only if separate tests establish a valid production role and compatible price semantics. Add breakout/range or other families only where a measurable gap exists and data supports validation. Do not interpret “all strategies” as every possible indicator combination. Do not expand instrument coverage to options, currencies, or other products in this scope.
 
 ### 2. Shared orchestration and Angel One execution
 

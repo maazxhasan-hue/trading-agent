@@ -4,7 +4,7 @@
 
 **Architecture:** Existing strategy and agent modules produce proposals from a shared market snapshot. The current company orchestrator applies regime/debate and portfolio risk checks, and any accepted intent continues through the existing broker adapter, guarded live gate, and order manager. Validation evidence is generated separately from execution and cannot automatically arm live trading.
 
-**Tech Stack:** Existing Python application, pytest test suite, existing Angel One adapter/order manager, existing paper tournament and walk-forward validation components. Tests use deterministic market fixtures and fake broker objects; no live broker login/order calls.
+**Tech Stack:** Existing Python application, unittest test suite (pytest helpers imported by existing tests), existing Angel One adapter/order manager, existing paper tournament and walk-forward validation components. Tests use deterministic market fixtures and fake broker objects; no live broker login/order calls.
 
 **Spec:** `docs/superpowers/specs/2026-10-11-live-capable-strategy-engine-design.md`
 
@@ -45,7 +45,7 @@
 
 1. First add tests for a serializable proposal carrying stable strategy ID/version, market/instrument/exchange/timeframe, direction, entry/exit/stop assumptions, confidence, rationale/features, signal/data timestamps, maximum data age, and gross-edge/cost estimates. Add tests for no-signal, invalid/non-finite values, stale input, and deterministic intent identity.
 2. Keep proposal generation a pure operation over an explicit shared snapshot and strategy output; it must not import the Angel One adapter, auth manager, environment secrets, or order manager.
-3. Preserve existing `signals.build_signal` callers; translate existing fair-value, momentum, and mean-reversion outputs into proposals without changing legacy semantics until tests characterize them.
+3. Preserve existing `signals.build_signal` callers. Do not assume the standalone fair-value helper is part of the NSE/MCX company path; Task 3 should adapt the production `agent_votes` outputs to proposals.
 4. Run proposal tests plus current signal/agent tests. Confirm proposals serialize without secrets or broker state.
 5. Commit: `feat: add broker-independent strategy proposals`.
 
@@ -53,7 +53,7 @@
 
 **Files:** `nse_agent.py`, `mcx_agent.py`, `signals.py`, optionally `nse_regime.py`; create/extend `tests/test_strategy_orchestration.py`.
 
-1. Add tests using a fixed snapshot and fake agents to prove enabled existing families (fair-value/research, momentum, mean reversion, event-driven where already supported, and regime context) see the same timestamped market data and emit attributable proposals.
+1. Add tests using a fixed snapshot and fake agents to prove the existing production vote families (momentum, mean reversion, event-driven, MCX commodity specialist, and cross-market arbitrage) see the same timestamped market data and emit attributable proposals. Treat regime and debate as shared context, not additional strategy votes.
 2. Add tests that every proposal is visible in the decision record and rejected proposals carry a reason. Ensure stale quotes, absent regime/context, or risk disagreement cannot turn into an accepted intent.
 3. Integrate proposals into the existing company orchestration and debate/risk path. Keep agent IDs and existing public interfaces compatible where feasible; do not add strategy-level broker calls.
 4. Add a fake execution test verifying only a risk-approved, deterministic intent reaches the existing order manager and that duplicate intent evaluation does not submit twice. Keep live gates disabled and inject no real broker credentials.
