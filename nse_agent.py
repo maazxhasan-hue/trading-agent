@@ -5,7 +5,6 @@ Live Zerodha execution requires an authorised Zerodha data provider as well as
 the existing live-trading gates. No profitability is guaranteed.
 """
 import json
-import hashlib
 import os
 import time
 from datetime import datetime
@@ -28,6 +27,11 @@ except ImportError:
 from nse_debate import NSEPreTradeDebate
 from nse_regime import classify as classify_regime
 from trade_journal import TradeJournal
+from strategy_proposals import (
+    StrategyProposal,
+    aggregate_intent_id,
+    proposals_from_votes,
+)
 from mcx_tournament import TournamentLedger
 from mcx_paper_portfolios import MCXPaperPortfolioBook
 from mcx_paper_tournament import MCXPaperTournamentBridge
@@ -62,6 +66,8 @@ class Signal:
     reason: str
     features: dict | None = None
     agent_votes: dict | None = None
+    strategy_proposals: tuple[StrategyProposal, ...] = ()
+    proposal_rejections: tuple[dict, ...] = ()
 
 
 class NSETradingCompany:
@@ -360,6 +366,29 @@ class NSETradingCompany:
             for k, v in votes.items()
         }
 
+    def strategy_proposals(self, market, features, votes, *, signal_timestamp=None):
+        """Adapt the current vote snapshot to safe, broker-independent proposals."""
+        timeframe = os.getenv("MARKET_INTERVAL", os.getenv("NSE_INTERVAL", "5m"))
+        configured_costs = {
+            name: os.getenv(f"STRATEGY_COST_{name.upper()}_BPS")
+            for name in ("fees", "spread", "slippage", "taxes")
+        }
+        costs_bps = configured_costs if all(
+            value is not None for value in configured_costs.values()
+        ) else None
+        provider = str(getattr(self.feed, "data_label", "unknown"))
+        return proposals_from_votes(
+            votes=votes,
+            market=market,
+            features=features,
+            costs_bps=costs_bps,
+            data_version=f"{provider}:{timeframe}:v1",
+            validation_version="paper-only",
+            timeframe=timeframe,
+            signal_timestamp=time.time() if signal_timestamp is None else signal_timestamp,
+            max_data_age_seconds=MAX_LIVE_DATA_AGE,
+        )
+
     def learn(self, market, f, votes):
         self.learning.record_observation(market.market_id, f["price"], save=False)
         # Calibrated confidence reduces Brier-score distortion from overly
@@ -409,7 +438,7 @@ class NSETradingCompany:
             )
         hq_events.snapshot(market.tradingsymbol, f, votes)
 
-    def signal(self, market, f, votes):
+    def signal(self, market, f, votes, strategy_proposals=None, proposal_rejections=None):
         qualified, _ = self.learning.qualified_agents(list(votes.keys()))
         q = set(qualified)
         usable = [v for a, v in votes.items() if a in q and abs(v) > 0.05]
@@ -438,6 +467,10 @@ class NSETradingCompany:
             challenges=debate.challenges,
             votes=debate.votes,
             qualified_agents=qualified,
+            strategy_proposals=[
+                proposal.to_dict() for proposal in (strategy_proposals or ())
+            ],
+            proposal_rejections=list(proposal_rejections or ()),
         )
         hq_events.snapshot(
             market.tradingsymbol,
@@ -486,6 +519,8 @@ class NSETradingCompany:
             "debate-approved: " + debate.rationale,
             features=dict(f),
             agent_votes=dict(votes),
+            strategy_proposals=tuple(strategy_proposals or ()),
+            proposal_rejections=tuple(proposal_rejections or ()),
         )
 
     def _mcx_generation_signal(self, generation, market):
@@ -773,6 +808,22 @@ class NSETradingCompany:
 
     def paper_or_live(self, sig):
         m = sig.market
+        if self.execution.enabled:
+            eligible = [
+                proposal for proposal in sig.strategy_proposals
+                if proposal.direction == sig.direction
+                and proposal.is_fresh(now=time.time())
+                and proposal.estimated_net_edge > 0
+                and proposal.validation_version != "paper-only"
+            ]
+            if not eligible:
+                self.journal.record(
+                    "LIVE_SIGNAL_BLOCKED_BY_STRATEGY",
+                    symbol=m.tradingsymbol,
+                    reason="no fresh, positive-net strategy proposal",
+                )
+                print("[risk] no fresh, positive-net strategy proposal; no live order")
+                return
         capital = self.execution.funds_available(getattr(m, "exchange", "NSE")) if self.execution.enabled else self.cash
         if capital is None or capital <= 0:
             print("[risk] no available Zerodha equity margin; no order")
@@ -820,8 +871,13 @@ class NSETradingCompany:
         if self.execution.enabled:
             price = m.last_price * (1 + 0.0005 * sig.direction)
             try:
-                raw_intent = f"{self.paper_cycle}:{m.market_id}:{side}:{qty}"
-                intent_id = ("mcx-" if m.exchange == "MCX" else "nse-") + hashlib.sha256(raw_intent.encode()).hexdigest()[:12]
+                intent_id = aggregate_intent_id(
+                    m.market_id,
+                    m.exchange,
+                    sig.direction,
+                    int(qty),
+                    eligible,
+                )
                 if self.backend in {"angelone_nse", "angelone_mcx"}:
                     request = __import__("angelone_adapter").OrderRequest(
                         m.tradingsymbol,
@@ -1110,7 +1166,20 @@ class NSETradingCompany:
                         move=True,
                     )
                 self.learn(m, f, votes)
-                sig = self.signal(m, f, votes)
+                proposal_result = self.strategy_proposals(m, f, votes)
+                self.journal.record(
+                    "STRATEGY_PROPOSALS",
+                    symbol=m.tradingsymbol,
+                    proposals=[proposal.to_dict() for proposal in proposal_result["proposals"]],
+                    rejections=proposal_result["rejections"],
+                )
+                sig = self.signal(
+                    m,
+                    f,
+                    votes,
+                    proposal_result["proposals"],
+                    proposal_result["rejections"],
+                )
                 if (
                     sig
                     and m.market_id not in self.traded_today
