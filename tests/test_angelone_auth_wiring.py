@@ -21,6 +21,9 @@ def test_rate_limited_adapter_fails_closed(monkeypatch):
         def get_client(self): raise AuthBlocked("Angel One authentication is rate limited.")
         def status(self): return {"status":"RATE_LIMITED","cooldown_remaining_seconds":100}
     monkeypatch.setattr(module,"_manager_for_environment",lambda *args:Manager())
+    # This test covers auth-state handling, independent of the optional SDK.
+    monkeypatch.setattr(module,"SmartConnect",object)
+    monkeypatch.setattr(module,"pyotp",object())
     for key,value in {"TRADING_BACKEND":"angelone_nse","LIVE_TRADING":"false","ANGELONE_READONLY":"true","ANGELONE_API_KEY":"k","ANGELONE_CLIENT_CODE":"c","ANGELONE_PIN":"p","ANGELONE_TOTP_SECRET":"t","ANGELONE_CLIENT_PUBLIC_IP":"127.0.0.1"}.items(): monkeypatch.setenv(key,value)
     try:
         module.AngelOneExecution()
