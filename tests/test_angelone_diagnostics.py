@@ -1,4 +1,4 @@
-from scripts.diagnose_angelone_auth import diagnose
+from scripts.diagnose_angelone_auth import _safe_environment, diagnose
 
 def test_diagnostics_redact_env_and_log_secrets(tmp_path):
     log=tmp_path/"auth.log"
@@ -16,12 +16,28 @@ def test_diagnostics_report_ip_and_cooldown():
     assert result["public_ip_matches"] is True
     assert result["auth"]["cooldown_remaining_seconds"]==90
 
+def test_diagnostics_missing_ip_is_unknown_not_mismatch():
+    result=diagnose(system_reader=lambda cmd:"active" if cmd[0]=="systemctl" else "",public_ip_reader=lambda:"198.51.100.2",state_reader=lambda:{"status":"AUTH_REQUIRED"},env={})
+    assert result["configured_public_ip"] is None
+    assert result["public_ip_matches"] is None
+
+def test_safe_environment_reads_only_allowlisted_systemd_values(tmp_path, monkeypatch):
+    envfile=tmp_path/"service.env"
+    envfile.write_text("ANGELONE_CLIENT_PUBLIC_IP=198.51.100.7\nANGELONE_AUTH_STATE_PATH=/tmp/auth-state.json\nANGELONE_AUTH_LOG=/tmp/auth.log\nANGELONE_API_KEY=secret-api-key\nANGELONE_PIN=secret-pin\n")
+    for key in ("ANGELONE_CLIENT_PUBLIC_IP","ANGELONE_AUTH_STATE_PATH","ANGELONE_AUTH_LOG"):
+        monkeypatch.delenv(key,raising=False)
+    result=_safe_environment(lambda cmd:f"{envfile} (ignore_errors=no)" if "EnvironmentFiles" in cmd else "")
+    assert result["ANGELONE_CLIENT_PUBLIC_IP"]=="198.51.100.7"
+    assert result["ANGELONE_AUTH_STATE_PATH"]=="/tmp/auth-state.json"
+    assert "ANGELONE_API_KEY" not in result
+    assert "ANGELONE_PIN" not in result
+    monkeypatch.delenv("ANGELONE_AUTH_STATE_PATH",raising=False)
+
 def test_diagnostics_never_calls_smartapi():
     commands=[]
     result=diagnose(system_reader=lambda cmd:commands.append(cmd) or ("active" if cmd[0]=="systemctl" else ""),public_ip_reader=lambda:"",state_reader=lambda:{"status":"AUTH_REQUIRED"},env={})
     assert all(c[0] in {"systemctl", "ps", "journalctl", "crontab"} for c in commands)
     assert result["auth"]["status"]=="AUTH_REQUIRED"
-
 
 def test_diagnostics_count_matching_timers_services_and_cron_without_echoing_commands():
     def run(cmd):

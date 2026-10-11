@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import shlex
 import urllib.request
 import sys
 from pathlib import Path
@@ -28,8 +29,40 @@ def _safe_error(text):
         return "login endpoint: network failure"
     return "Angel One authentication error (details suppressed)"
 
+def _safe_environment(system_reader):
+    """Load only non-secret diagnostic settings from the service env file."""
+    env = dict(os.environ)
+    allowed = {"ANGELONE_CLIENT_PUBLIC_IP", "ANGELONE_AUTH_STATE_PATH", "ANGELONE_AUTH_LOG"}
+    if all(env.get(key) for key in allowed):
+        return env
+    files = system_reader(["systemctl", "show", "trading-agent.service", "-p", "EnvironmentFiles", "--value"])
+    for item in files.splitlines():
+        candidate = item.strip().split(" (", 1)[0].lstrip("-")
+        if not candidate.startswith("/"):
+            continue
+        try:
+            lines = Path(candidate).read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, sep, raw = line.partition("=")
+            key = key.strip()
+            if not sep or key not in allowed or env.get(key):
+                continue
+            try:
+                parts = shlex.split(raw, comments=False, posix=True)
+                env[key] = " ".join(parts) if parts else ""
+            except ValueError:
+                continue
+    if env.get("ANGELONE_AUTH_STATE_PATH") and not os.environ.get("ANGELONE_AUTH_STATE_PATH"):
+        os.environ["ANGELONE_AUTH_STATE_PATH"] = env["ANGELONE_AUTH_STATE_PATH"]
+    return env
+
 def diagnose(system_reader=_run, public_ip_reader=None, state_reader=read_auth_status, env=None):
-    env = os.environ if env is None else env
+    env = _safe_environment(system_reader) if env is None else env
     services = {}
     for service in SERVICES:
         output = system_reader(["systemctl", "is-active", service]).strip()
@@ -78,7 +111,7 @@ def diagnose(system_reader=_run, public_ip_reader=None, state_reader=read_auth_s
             "matching_systemd_timers": matching_timers, "matching_cron_entries": matching_cron_entries,
             "process_counts": process_counts,
             "configured_public_ip": configured_ip, "current_public_ip": current_ip,
-            "public_ip_matches": bool(configured_ip and current_ip and configured_ip == current_ip),
+            "public_ip_matches": (configured_ip == current_ip) if configured_ip and current_ip else None,
             "auth": state, "recent_auth_errors": list(dict.fromkeys(recent))[-10:]}
 
 def main():
