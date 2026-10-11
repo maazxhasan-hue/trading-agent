@@ -8,6 +8,14 @@ from __future__ import annotations
 
 import os
 import time
+import json
+import logging
+import threading
+from urllib.parse import urljoin
+
+import requests
+
+from angelone_auth import AngelOneAuthManager, AuthResponse, AuthSettings, AuthBlocked
 from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -25,6 +33,78 @@ except ImportError:
 
 class AngelOneLocked(RuntimeError):
     pass
+
+
+_AUTH_MANAGERS = {}
+_AUTH_MANAGERS_LOCK = threading.Lock()
+
+def _manager_for_environment(api_key, client_code, pin, totp_secret, public_ip, local_ip):
+    state_path = os.getenv("ANGELONE_AUTH_STATE_PATH", "/var/lib/trading-agent/angelone-auth.json")
+    with _AUTH_MANAGERS_LOCK:
+        if state_path in _AUTH_MANAGERS:
+            return _AUTH_MANAGERS[state_path]
+        if SmartConnect is None or pyotp is None:
+            raise AngelOneLocked("Angel One client dependencies are unavailable.")
+
+        def make_client(tokens=None):
+            # SmartAPI's bundled logger emits full headers and request bodies on
+            # errors. Suppress it before the client can make any API call.
+            logging.getLogger("logzero_default").disabled = True
+            logging.getLogger("SmartApi.smartConnect").disabled = True
+            client = SmartConnect(api_key=api_key)
+            client.debug = False
+            client.clientPublicIP = public_ip
+            client.clientLocalIP = local_ip
+            if tokens:
+                client.setAccessToken(tokens["jwtToken"])
+                client.setRefreshToken(tokens["refreshToken"])
+                client.setFeedToken(tokens["feedToken"])
+                client.setUserId(client_code)
+            return client
+
+        def login_transport():
+            client = make_client()
+            headers = client.requestHeaders()
+            body = {"clientcode": client_code, "password": pin, "totp": pyotp.TOTP(totp_secret).now()}
+            try:
+                response = requests.post(
+                    urljoin(client.root.rstrip("/") + "/", client._routes["api.login"].lstrip("/")),
+                    headers=headers, json=body, timeout=client.timeout,
+                )
+                try:
+                    data = response.json()
+                except ValueError:
+                    data = {"message": "non_json_response"}
+                return AuthResponse(response.status_code, dict(response.headers), data if isinstance(data, dict) else {})
+            except requests.RequestException:
+                raise OSError("Angel One login transport failed") from None
+
+        def refresh_transport(tokens):
+            client = make_client(tokens)
+            headers = client.requestHeaders()
+            headers["Authorization"] = "Bearer " + tokens["jwtToken"]
+            try:
+                response = requests.post(
+                    urljoin(client.root.rstrip("/") + "/", client._routes["api.token"].lstrip("/")),
+                    headers=headers, json={"refreshToken": tokens["refreshToken"]}, timeout=client.timeout,
+                )
+                try:
+                    data = response.json()
+                except ValueError:
+                    data = {"message": "non_json_response"}
+                return AuthResponse(response.status_code, dict(response.headers), data if isinstance(data, dict) else {})
+            except requests.RequestException:
+                raise OSError("Angel One session refresh transport failed") from None
+
+        settings = AuthSettings(
+            state_path=__import__("pathlib").Path(state_path),
+            cooldown_seconds=float(os.getenv("ANGELONE_AUTH_COOLDOWN_SECONDS", "900")),
+            min_interval_seconds=float(os.getenv("ANGELONE_AUTH_MIN_INTERVAL_SECONDS", "1")),
+            max_attempts=int(os.getenv("ANGELONE_AUTH_MAX_ATTEMPTS", "3")),
+        )
+        manager = AngelOneAuthManager(settings=settings, transport=login_transport, client_factory=make_client, refresh_transport=refresh_transport)
+        _AUTH_MANAGERS[state_path] = manager
+        return manager
 
 
 @dataclass
@@ -73,6 +153,7 @@ class AngelOneExecution:
         self.local_ip = os.getenv("ANGELONE_CLIENT_LOCAL_IP", "127.0.0.1")
         self.client = None
         self._session_day = None
+        self.auth_manager = None
         if self.enabled or self.readonly:
             self._connect()
 
@@ -95,25 +176,43 @@ class AngelOneExecution:
 
     def _connect(self):
         self._validate_credentials()
-        now_day = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
-        self.client = SmartConnect(api_key=self.api_key)
-        # The current SmartAPI Python SDK has defaults for these headers; override
-        # them explicitly so the broker sees the registered Azure static public IP.
-        self.client.clientPublicIP = self.public_ip
-        self.client.clientLocalIP = self.local_ip
-        totp = pyotp.TOTP(self.totp_secret).now()
-        result = self.client.generateSession(self.client_code, self.pin, totp)
-        if not result or not result.get("status"):
-            message = (result or {}).get("message", "Angel One login failed")
-            raise AngelOneLocked(str(message))
-        self._session_day = now_day
+        try:
+            self.auth_manager = _manager_for_environment(
+                self.api_key, self.client_code, self.pin, self.totp_secret,
+                self.public_ip, self.local_ip,
+            )
+            self.client = self.auth_manager.get_client()
+            self._session_day = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+        except AuthBlocked as exc:
+            self.client = None
+            raise AngelOneLocked(str(exc)) from None
+        except Exception:
+            self.client = None
+            raise AngelOneLocked("Angel One authentication is unavailable.") from None
 
     def _ensure_session(self):
-        if self.client is None:
+        if self.auth_manager is None:
             raise AngelOneLocked("Angel One session is not connected.")
-        today = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
-        if self._session_day != today:
-            self._connect()
+        try:
+            self.client = self.auth_manager.get_client()
+        except AuthBlocked as exc:
+            raise AngelOneLocked(str(exc)) from None
+
+    def _api_call(self, method, *args):
+        try:
+            return getattr(self.client, method)(*args)
+        except Exception as exc:
+            message = str(exc).lower()
+            code = getattr(exc, "code", None)
+            recognized_expiry = code == 403 and any(term in message for term in ("tokenexception", "token expired", "invalid token"))
+            if not recognized_expiry or self.auth_manager is None:
+                raise AngelOneLocked("SmartAPI request failed.") from None
+            rejected_token = getattr(self.client, "access_token", None)
+            self.client = self.auth_manager.handle_expired_session(rejected_token=rejected_token)
+            try:
+                return getattr(self.client, method)(*args)
+            except Exception:
+                raise AngelOneLocked("SmartAPI request failed after session refresh.") from None
 
     def status(self):
         return {
@@ -126,6 +225,8 @@ class AngelOneExecution:
             "live_runtime_approved": self.live_runtime_approved,
             "registered_public_ip": self.public_ip,
             "connected": self.client is not None,
+            "auth_status": self.auth_manager.status()["status"] if self.auth_manager else "AUTH_REQUIRED",
+            "cooldown_remaining_seconds": self.auth_manager.status()["cooldown_remaining_seconds"] if self.auth_manager else 0,
         }
 
     def instruments(self, exchange="NSE"):
@@ -171,10 +272,10 @@ class AngelOneExecution:
         for raw_token in tokens:
             token = str(raw_token)
             try:
-                result = self.client.getMarketData(mode, {exchange: [token]})
+                result = self._api_call("getMarketData", mode, {exchange: [token]})
                 if not result or not result.get("status"):
                     raise AngelOneLocked(
-                        str((result or {}).get("message", "quote failed"))
+                        "quote failed"
                     )
                 data = result.get("data") or {}
                 fetched = data.get("fetched", []) if isinstance(data, dict) else []
@@ -193,7 +294,7 @@ class AngelOneExecution:
                     exchange,
                     token,
                     type(exc).__name__,
-                    str(exc),
+                    "request_failed",
                 )
             finally:
                 # SmartAPI currently documents one token/request and a 10 req/sec
@@ -203,14 +304,14 @@ class AngelOneExecution:
 
     def ltp(self, exchange, tradingsymbol, symboltoken):
         self._ensure_session()
-        result = self.client.ltpData(exchange, tradingsymbol, str(symboltoken))
+        result = self._api_call("ltpData", exchange, tradingsymbol, str(symboltoken))
         if not result or not result.get("status"):
-            raise AngelOneLocked(str((result or {}).get("message", "LTP failed")))
+            raise AngelOneLocked("Angel One LTP request failed.")
         return result.get("data") or {}
 
     def historical(self, symboltoken, from_date, to_date, interval="FIVE_MINUTE", exchange="NSE"):
         self._ensure_session()
-        result = self.client.getCandleData({
+        result = self._api_call("getCandleData", {
             "exchange": exchange,
             "symboltoken": str(symboltoken),
             "interval": interval,
@@ -218,7 +319,7 @@ class AngelOneExecution:
             "todate": to_date,
         })
         if not result or not result.get("status"):
-            raise AngelOneLocked(str((result or {}).get("message", "historical data failed")))
+            raise AngelOneLocked("Angel One historical data request failed.")
         rows = []
         for candle in result.get("data") or []:
             if len(candle) < 6:
@@ -235,7 +336,7 @@ class AngelOneExecution:
 
     def funds_available(self, exchange="NSE"):
         self._ensure_session()
-        result = self.client.rmsLimit()
+        result = self._api_call("rmsLimit", )
         if not result or not result.get("status"):
             return None
         data = result.get("data") or {}
@@ -246,7 +347,7 @@ class AngelOneExecution:
 
     def positions(self):
         self._ensure_session()
-        result = self.client.position()
+        result = self._api_call("position", )
         rows = (result or {}).get("data") or []
         normalized = []
         for row in rows:
@@ -281,7 +382,7 @@ class AngelOneExecution:
 
     def orders(self):
         self._ensure_session()
-        result = self.client.orderBook()
+        result = self._api_call("orderBook", )
         return [self._normalize_order(x) for x in ((result or {}).get("data") or [])]
 
     def place_limit(self, request: OrderRequest):
@@ -323,7 +424,7 @@ class AngelOneExecution:
             "quantity": str(request.quantity),
             "ordertag": request.tag[:19] if request.tag else None,
         }
-        order_id = self.client.placeOrder(payload)
+        order_id = self._api_call("placeOrder", payload)
         if not order_id:
             raise AngelOneLocked("Angel One returned no order ID.")
         return str(order_id)
@@ -332,7 +433,7 @@ class AngelOneExecution:
         if not self.enabled:
             raise AngelOneLocked("Live execution is disabled.")
         self._ensure_session()
-        result = self.client.cancelOrder(str(order_id), "NORMAL")
+        result = self._api_call("cancelOrder", str(order_id), "NORMAL")
         return result
 
     def exit_all_intraday(self, exchange=None):
@@ -367,5 +468,5 @@ class AngelOneExecution:
                 "stoploss": "0",
                 "quantity": str(abs(qty)),
             }
-            results.append(self.client.placeOrder(payload))
+            results.append(self._api_call("placeOrder", payload))
         return results
