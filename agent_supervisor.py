@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from agent_runtime import AgentRuntimeManager
 from agent_research_tools import AgentResearchTools
+from angelone_auth import read_auth_status
 
 AGENTS = [
     "orchestrator","market-scanner","fair-value","momentum","mean-reversion",
@@ -24,6 +25,16 @@ class AgentSupervisor:
         )
         self.runtimes = {agent: self.runtime.provision(agent) for agent in AGENTS}
         self.research_tools = AgentResearchTools(self.runtime)
+
+    def auth_status(self):
+        try:
+            return read_auth_status()
+        except Exception:
+            return {"status": "UNAVAILABLE", "cooldown_remaining_seconds": 0}
+
+    def health_payload(self):
+        return {"status": "ok", "service": "trading-company", "live_trading_authorized": False,
+                "broker_auth": self.auth_status()}
 
     def health(self):
         return {
@@ -77,7 +88,7 @@ class AgentSupervisor:
                 "live_trading_authorized": False,
             }
         except Exception as exc:
-            return {"status": "unavailable", "error": repr(exc), "live_trading_authorized": False}
+            return {"status": "unavailable", "error": type(exc).__name__, "live_trading_authorized": False}
 
     def metrics(self):
         try:
@@ -102,10 +113,11 @@ class AgentSupervisor:
                 "paper": paper,
                 "agent_count": len(AGENTS),
                 "strategy_agent_count": 5,
+                "broker_auth": self.auth_status(),
                 "live_trading_authorized": False,
             }
         except Exception as exc:
-            return {"status": "unavailable", "error": repr(exc), "live_trading_authorized": False}
+            return {"status": "unavailable", "error": type(exc).__name__, "live_trading_authorized": False}
 
     def dashboard_html(self):
         data = self.metrics()
@@ -149,7 +161,7 @@ class AgentSupervisor:
         class HealthHandler(BaseHTTPRequestHandler):
             def do_GET(self):
                 if self.path in ("/", "/health", "/healthz"):
-                    payload = {"status": "ok", "service": "trading-company", "live_trading_authorized": False}
+                    payload = supervisor.health_payload()
                 elif self.path == "/validation":
                     payload = supervisor.validation()
                 elif self.path == "/metrics":

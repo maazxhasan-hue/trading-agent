@@ -21,8 +21,8 @@ from nse_market_data import NSEMarket
 class AngelOneNSEFeed:
     provider = "angelone"
 
-    def __init__(self):
-        self.broker = AngelOneExecution()
+    def __init__(self, broker=None):
+        self.broker = broker or AngelOneExecution()
         self._instruments = {}
         self._loaded_at = 0.0
         self._history_cache = {}

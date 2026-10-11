@@ -82,11 +82,11 @@ class NSETradingCompany:
         elif self.backend == "angelone_mcx":
             if AngelOneMCXFeed is None:
                 raise RuntimeError("Angel One MCX feed is unavailable.")
-            self.feed = AngelOneMCXFeed()
             self.execution = AngelOneExecution()
+            self.feed = AngelOneMCXFeed(broker=self.execution)
         elif self.backend == "angelone_nse":
-            self.feed = AngelOneNSEFeed()
             self.execution = AngelOneExecution()
+            self.feed = AngelOneNSEFeed(broker=self.execution)
         else:
             self.feed = NSEPublicFeed()
             self.execution = ZerodhaExecution()
