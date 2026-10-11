@@ -180,7 +180,11 @@ def _economic_rows(history: Iterable[dict], strategy_id: str):
             continue
 
         regime_value = item.get("regime")
-        if not isinstance(regime_value, str) or not regime_value.strip():
+        if (
+            not isinstance(regime_value, str)
+            or not regime_value.strip()
+            or regime_value.strip().upper() == "UNKNOWN"
+        ):
             missing_regime = True
         supplied_costs = item.get("costs")
         if not isinstance(supplied_costs, dict) or any(key not in supplied_costs for key in _ECONOMIC_COSTS):
@@ -388,11 +392,18 @@ def net_walk_forward_report(
     benchmark_gap = benchmark - hourly_net if hourly_net is not None else None
 
     baseline_test_rows = []
+    baseline_rows_by_window = []
     for window in windows:
-        baseline_test_rows.extend(
+        window_baseline = [
             row for row in baseline_rows
             if window["test_start"] <= row["timestamp"] <= window["test_end"]
-        )
+        ]
+        baseline_rows_by_window.append(window_baseline)
+        baseline_test_rows.extend(window_baseline)
+    baseline_coverage_sufficient = bool(windows) and all(
+        len(rows_for_window) >= window["test_samples"]
+        for window, rows_for_window in zip(windows, baseline_rows_by_window)
+    )
     baseline_metrics = (
         _economic_totals(baseline_test_rows)
         if baseline_test_rows and not baseline_costs_incomplete
@@ -419,6 +430,8 @@ def net_walk_forward_report(
         status = "INSUFFICIENT_REGIME_SAMPLES"
     elif any(item["net_pnl"] <= 0 for item in qualified_regimes):
         status = "UNSTABLE_BY_REGIME"
+    elif baseline_test_rows and not baseline_coverage_sufficient:
+        status = "BASELINE_INSUFFICIENT_SAMPLES"
     elif baseline_metrics is None:
         status = "BASELINE_MISSING"
     elif baseline_delta < 0:
@@ -459,3 +472,4 @@ def net_walk_forward_report(
         "baseline_net_pnl": baseline_metrics["net_pnl"] if baseline_metrics else None,
         "baseline_delta": baseline_delta,
     }
+
